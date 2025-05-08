@@ -1,0 +1,4 @@
+app:
+  port: 8080
+firebase:
+  credentials_file: "serviceAccountKey.json"
