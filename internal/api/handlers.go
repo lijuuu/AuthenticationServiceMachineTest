@@ -8,15 +8,18 @@ import (
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/service"
 )
 
+// Handler holds the AuthService dependency
 type Handler struct {
-	Auth services.services
+	Auth services.AuthService
 }
 
-func NewHandler(auth services.services) *Handler {
+// NewHandler creates a new Handler instance
+func NewHandler(auth services.AuthService) *Handler {
 	return &Handler{Auth: auth}
 }
 
-func SignupHandler(c *gin.Context) {
+// SignupHandler handles user signup requests
+func (h *Handler) SignupHandler(c *gin.Context) {
 	var req model.SignupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -27,7 +30,7 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.SignUp(req)
+	resp, err := h.Auth.Signup(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -36,7 +39,8 @@ func SignupHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func LoginHandler(c *gin.Context) {
+// LoginHandler handles user login requests
+func (h *Handler) LoginHandler(c *gin.Context) {
 	var req model.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -47,7 +51,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.Login(req)
+	resp, err := h.Auth.Login(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -56,8 +60,9 @@ func LoginHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func GuestLoginHandler(c *gin.Context) {
-	resp, err := services.GuestLogin()
+// GuestLoginHandler handles guest login requests
+func (h *Handler) GuestLoginHandler(c *gin.Context) {
+	resp, err := h.Auth.GuestLogin(model.GuestLoginRequest{})
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -66,7 +71,8 @@ func GuestLoginHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func VerifyCredentialsHandler(c *gin.Context) {
+// VerifyCredentialsHandler handles credential verification requests
+func (h *Handler) VerifyCredentialsHandler(c *gin.Context) {
 	var req model.VerifyCredentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -77,7 +83,7 @@ func VerifyCredentialsHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.VerifyCredentials(req)
+	resp, err := h.Auth.VerifyCredentials(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -86,7 +92,8 @@ func VerifyCredentialsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func ForgotPasswordHandler(c *gin.Context) {
+// ForgotPasswordHandler handles password reset initiation requests
+func (h *Handler) ForgotPasswordHandler(c *gin.Context) {
 	var req model.ForgotPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -97,7 +104,7 @@ func ForgotPasswordHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.ForgotPassword(req)
+	resp, err := h.Auth.ForgotPassword(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -106,7 +113,8 @@ func ForgotPasswordHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func ResetPasswordHandler(c *gin.Context) {
+// ResetPasswordHandler handles password reset requests
+func (h *Handler) ResetPasswordHandler(c *gin.Context) {
 	var req model.ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -117,7 +125,7 @@ func ResetPasswordHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.ResetPassword(req)
+	resp, err := h.Auth.ResetPassword(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -126,7 +134,8 @@ func ResetPasswordHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func ChangeLoginHandler(c *gin.Context) {
+// ChangeLoginHandler handles login credential change requests
+func (h *Handler) ChangeLoginHandler(c *gin.Context) {
 	var req model.ChangeLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -137,7 +146,7 @@ func ChangeLoginHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.ChangeLogin(req)
+	resp, err := h.Auth.ChangeLogin(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -146,7 +155,8 @@ func ChangeLoginHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func Enable2FAHandler(c *gin.Context) {
+// Enable2FAHandler handles 2FA enablement requests
+func (h *Handler) Enable2FAHandler(c *gin.Context) {
 	var req model.Enable2FARequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -157,7 +167,7 @@ func Enable2FAHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.Enable2FA(req)
+	resp, err := h.Auth.Enable2FA(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -166,7 +176,8 @@ func Enable2FAHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func AddAltCredentialHandler(c *gin.Context) {
+// AddAltCredentialHandler handles adding alternate credential requests
+func (h *Handler) AddAltCredentialHandler(c *gin.Context) {
 	var req model.AddAltCredentialRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -177,7 +188,7 @@ func AddAltCredentialHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.AddAltCredential(req)
+	resp, err := h.Auth.AddAltCredential(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -186,10 +197,11 @@ func AddAltCredentialHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func GetProfileHandler(c *gin.Context) {
+// GetProfileHandler handles profile retrieval requests
+func (h *Handler) GetProfileHandler(c *gin.Context) {
 	uid := c.MustGet("uid").(string)
 
-	resp, err := services.GetProfile(uid)
+	resp, err := h.Auth.GetProfile(uid)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -198,8 +210,9 @@ func GetProfileHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func LogoutHandler(c *gin.Context) {
-	resp, err := services.Logout()
+// LogoutHandler handles logout requests
+func (h *Handler) LogoutHandler(c *gin.Context) {
+	resp, err := h.Auth.Logout()
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -208,7 +221,8 @@ func LogoutHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func RefreshTokenHandler(c *gin.Context) {
+// RefreshTokenHandler handles token refresh requests
+func (h *Handler) RefreshTokenHandler(c *gin.Context) {
 	var req model.RefreshTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -219,7 +233,7 @@ func RefreshTokenHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.RefreshToken(req)
+	resp, err := h.Auth.RefreshToken(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -228,7 +242,8 @@ func RefreshTokenHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func VerifyTokenHandler(c *gin.Context) {
+// VerifyTokenHandler handles token verification requests
+func (h *Handler) VerifyTokenHandler(c *gin.Context) {
 	token := c.Query("token")
 	if token == "" {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -239,7 +254,7 @@ func VerifyTokenHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.VerifyToken(token)
+	resp, err := h.Auth.VerifyToken(token)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -248,7 +263,8 @@ func VerifyTokenHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func UpdateProfileHandler(c *gin.Context) {
+// UpdateProfileHandler handles profile update requests
+func (h *Handler) UpdateProfileHandler(c *gin.Context) {
 	var req model.UpdateProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -261,7 +277,7 @@ func UpdateProfileHandler(c *gin.Context) {
 
 	uid := c.MustGet("uid").(string)
 
-	resp, err := services.UpdateProfile(uid, req)
+	resp, err := h.Auth.UpdateProfile(uid, req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -270,10 +286,11 @@ func UpdateProfileHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func DeleteAccountHandler(c *gin.Context) {
+// DeleteAccountHandler handles account deletion requests
+func (h *Handler) DeleteAccountHandler(c *gin.Context) {
 	uid := c.MustGet("uid").(string)
 
-	resp, err := services.DeleteAccount(uid)
+	resp, err := h.Auth.DeleteAccount(uid)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -282,7 +299,8 @@ func DeleteAccountHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func ChangePasswordHandler(c *gin.Context) {
+// ChangePasswordHandler handles password change requests
+func (h *Handler) ChangePasswordHandler(c *gin.Context) {
 	var req model.ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -295,7 +313,7 @@ func ChangePasswordHandler(c *gin.Context) {
 
 	uid := c.MustGet("uid").(string)
 
-	resp, err := services.ChangePassword(uid, req)
+	resp, err := h.Auth.ChangePassword(uid, req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -304,7 +322,8 @@ func ChangePasswordHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func VerifyEmailHandler(c *gin.Context) {
+// VerifyEmailHandler handles email verification requests
+func (h *Handler) VerifyEmailHandler(c *gin.Context) {
 	var req model.VerifyEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -315,7 +334,7 @@ func VerifyEmailHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.VerifyEmail(req)
+	resp, err := h.Auth.VerifyEmail(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -324,7 +343,8 @@ func VerifyEmailHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func VerifyPhoneHandler(c *gin.Context) {
+// VerifyPhoneHandler handles phone verification requests
+func (h *Handler) VerifyPhoneHandler(c *gin.Context) {
 	var req model.VerifyPhoneRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -335,7 +355,7 @@ func VerifyPhoneHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.VerifyPhone(req)
+	resp, err := h.Auth.VerifyPhone(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -344,7 +364,8 @@ func VerifyPhoneHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func ResendVerificationHandler(c *gin.Context) {
+// ResendVerificationHandler handles resending verification requests
+func (h *Handler) ResendVerificationHandler(c *gin.Context) {
 	var req model.ResendVerificationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -355,7 +376,7 @@ func ResendVerificationHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.ResendVerification(req)
+	resp, err := h.Auth.ResendVerification(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -364,7 +385,8 @@ func ResendVerificationHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func Verify2FAHandler(c *gin.Context) {
+// Verify2FAHandler handles 2FA verification requests
+func (h *Handler) Verify2FAHandler(c *gin.Context) {
 	var req model.Verify2FARequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -375,7 +397,7 @@ func Verify2FAHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := services.Verify2FA(req)
+	resp, err := h.Auth.Verify2FA(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -384,10 +406,11 @@ func Verify2FAHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func Disable2FAHandler(c *gin.Context) {
+// Disable2FAHandler handles disabling 2FA requests
+func (h *Handler) Disable2FAHandler(c *gin.Context) {
 	uid := c.MustGet("uid").(string)
 
-	resp, err := services.Disable2FA(uid)
+	resp, err := h.Auth.Disable2FA(uid)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -396,10 +419,11 @@ func Disable2FAHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func Get2FAStatusHandler(c *gin.Context) {
+// Get2FAStatusHandler handles retrieving 2FA status requests
+func (h *Handler) Get2FAStatusHandler(c *gin.Context) {
 	uid := c.MustGet("uid").(string)
 
-	resp, err := services.Get2FAStatus(uid)
+	resp, err := h.Auth.Get2FAStatus(uid)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return

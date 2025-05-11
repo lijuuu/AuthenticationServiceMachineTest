@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"strings"
 
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/model"
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/repository"
@@ -48,28 +47,12 @@ func NewAuthService(ctx context.Context, repo *repository.FirebaseRepository) Au
 	}
 }
 
-// MockVerifyOTP is a mock function for OTP verification
-func MockVerifyOTP(code string) bool {
-	// For testing, assume "123456" is the valid OTP
-	return code == "123456"
-}
-
 // Signup handles user registration
 func (s *authService) Signup(req model.SignupRequest) (model.SuccessResponse, *model.ErrorResponse) {
-	// Validation is handled by binding tags, but add additional checks if needed
-	if len(req.Username) < 3 {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Username must be at least 3 characters",
-			Code:    400,
-		}
-	}
-
 	resp, err := s.repo.Signup(req)
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -79,25 +62,15 @@ func (s *authService) Login(req model.LoginRequest) (model.TokenResponse, *model
 	if err != nil {
 		return model.TokenResponse{}, err
 	}
-
 	return resp, nil
 }
 
 // GuestLogin creates a guest user
 func (s *authService) GuestLogin(req model.GuestLoginRequest) (model.TokenResponse, *model.ErrorResponse) {
-	if len(req.Username) < 3 {
-		return model.TokenResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Username must be at least 3 characters",
-			Code:    400,
-		}
-	}
-
 	resp, err := s.repo.GuestLogin(req)
 	if err != nil {
 		return model.TokenResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -107,7 +80,6 @@ func (s *authService) VerifyCredentials(req model.VerifyCredentialsRequest) (mod
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -117,7 +89,6 @@ func (s *authService) ForgotPassword(req model.ForgotPasswordRequest) (model.Suc
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -127,16 +98,22 @@ func (s *authService) ResetPassword(req model.ResetPasswordRequest) (model.Succe
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
-// ChangeLogin updates the user's email
+// ChangeLogin updates the user's email or phone
 func (s *authService) ChangeLogin(req model.ChangeLoginRequest) (model.SuccessResponse, *model.ErrorResponse) {
-	if req.OldEmail == req.NewEmail {
+	if req.NewEmail != "" && req.OldCredential == req.NewEmail {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
-			Message: "New email must be different from old email",
+			Message: "New email must be different from old credential",
+			Code:    400,
+		}
+	}
+	if req.NewPhone != "" && req.OldCredential == req.NewPhone {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "New phone must be different from old credential",
 			Code:    400,
 		}
 	}
@@ -145,7 +122,6 @@ func (s *authService) ChangeLogin(req model.ChangeLoginRequest) (model.SuccessRe
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -155,26 +131,15 @@ func (s *authService) Enable2FA(req model.Enable2FARequest) (model.SuccessRespon
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
 // AddAltCredential adds an alternate credential
 func (s *authService) AddAltCredential(req model.AddAltCredentialRequest) (model.SuccessResponse, *model.ErrorResponse) {
-	// Basic validation for credential (email or phone)
-	if !strings.Contains(req.Credential, "@") && !strings.HasPrefix(req.Credential, "+") {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Credential must be a valid email or phone number",
-			Code:    400,
-		}
-	}
-
 	resp, err := s.repo.AddAltCredential(req)
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -187,12 +152,10 @@ func (s *authService) GetProfile(uid string) (model.ProfileResponse, *model.Erro
 			Code:    400,
 		}
 	}
-
 	resp, err := s.repo.GetProfile(uid)
 	if err != nil {
 		return model.ProfileResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -202,7 +165,6 @@ func (s *authService) Logout() (model.SuccessResponse, *model.ErrorResponse) {
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -212,7 +174,6 @@ func (s *authService) RefreshToken(req model.RefreshTokenRequest) (model.TokenRe
 	if err != nil {
 		return model.TokenResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -222,7 +183,6 @@ func (s *authService) VerifyToken(token string) (model.SuccessResponse, *model.E
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -235,12 +195,10 @@ func (s *authService) UpdateProfile(uid string, req model.UpdateProfileRequest) 
 			Code:    400,
 		}
 	}
-
 	resp, err := s.repo.UpdateProfile(uid, req)
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -253,12 +211,10 @@ func (s *authService) DeleteAccount(uid string) (model.SuccessResponse, *model.E
 			Code:    400,
 		}
 	}
-
 	resp, err := s.repo.DeleteAccount(uid)
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -271,12 +227,10 @@ func (s *authService) ChangePassword(uid string, req model.ChangePasswordRequest
 			Code:    400,
 		}
 	}
-
 	resp, err := s.repo.ChangePassword(uid, req)
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -286,7 +240,6 @@ func (s *authService) VerifyEmail(req model.VerifyEmailRequest) (model.SuccessRe
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -296,44 +249,24 @@ func (s *authService) VerifyPhone(req model.VerifyPhoneRequest) (model.SuccessRe
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
 // ResendVerification resends verification email or phone code
 func (s *authService) ResendVerification(req model.ResendVerificationRequest) (model.ResendVerificationResponse, *model.ErrorResponse) {
-	if req.Email == "" && req.Phone == "" {
-		return model.ResendVerificationResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Email or phone is required",
-			Code:    400,
-		}
-	}
-
 	resp, err := s.repo.ResendVerification(req)
 	if err != nil {
 		return model.ResendVerificationResponse{}, err
 	}
-
 	return resp, nil
 }
 
-// Verify2FA verifies the2FA code
+// Verify2FA verifies the 2FA code using TOTP
 func (s *authService) Verify2FA(req model.Verify2FARequest) (model.SuccessResponse, *model.ErrorResponse) {
-	// Use mock OTP verification
-	if !MockVerifyOTP(req.Code) {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid 2FA code",
-			Code:    401,
-		}
-	}
-
 	resp, err := s.repo.Verify2FA(req)
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -346,12 +279,10 @@ func (s *authService) Disable2FA(uid string) (model.SuccessResponse, *model.Erro
 			Code:    400,
 		}
 	}
-
 	resp, err := s.repo.Disable2FA(uid)
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}
-
 	return resp, nil
 }
 
@@ -364,11 +295,9 @@ func (s *authService) Get2FAStatus(uid string) (model.TwoFAStatusResponse, *mode
 			Code:    400,
 		}
 	}
-
 	resp, err := s.repo.Get2FAStatus(uid)
 	if err != nil {
 		return model.TwoFAStatusResponse{}, err
 	}
-
 	return resp, nil
 }

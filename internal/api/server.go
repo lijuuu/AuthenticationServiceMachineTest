@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func StartSafeServer(port string) {
+func StartSafeServer(port string) *gin.Engine {
 	engine := gin.Default()
 	srv := &http.Server{Addr: port, Handler: engine}
 
@@ -22,14 +22,19 @@ func StartSafeServer(port string) {
 		}
 	}()
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
+	// graceful shutdown goroutine
+	go func() {
+		stop := make(chan os.Signal, 1)
+		signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+		<-stop
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("forced shutdown: %s", err)
-	}
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Fatalf("forced shutdown: %s", err)
+		}
+	}()
+
+	return engine
 }

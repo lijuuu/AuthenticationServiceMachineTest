@@ -1,41 +1,52 @@
 package api
 
 import (
+	"context"
+
+	"firebase.google.com/go/auth"
 	"github.com/gin-gonic/gin"
+	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/middleware"
 )
 
-func RegisterAuthRoutes(r *gin.Engine) {
+// RegisterAuthRoutes sets up authentication-related routes with middleware
+func RegisterAuthRoutes(r *gin.Engine, handler *Handler, authClient *auth.Client, ctx context.Context) {
 	auth := r.Group("/api/v1/auth")
 	{
-		auth.POST("/signup", SignupHandler)
-		auth.POST("/login", LoginHandler)
-		auth.POST("/guest", GuestLoginHandler)
-		auth.POST("/verify", VerifyCredentialsHandler)
-		auth.POST("/forgot-password", ForgotPasswordHandler)
-		auth.POST("/reset-password", ResetPasswordHandler)
-		auth.POST("/change-login", ChangeLoginHandler)
-		auth.POST("/2fa", Enable2FAHandler)
-		auth.POST("/add-credential", AddAltCredentialHandler)
-		auth.GET("/profile", GetProfileHandler)
+		// Public routes (no authentication required)
+		auth.POST("/signup", handler.SignupHandler)
+		auth.POST("/login", handler.LoginHandler)
+		auth.POST("/guest", handler.GuestLoginHandler)
+		auth.POST("/verify", handler.VerifyCredentialsHandler)
+		auth.POST("/forgot-password", handler.ForgotPasswordHandler)
+		auth.POST("/reset-password", handler.ResetPasswordHandler)
+		auth.POST("/resend-verification", handler.ResendVerificationHandler)
 
-		// Auth & Session Management
-		auth.POST("/logout", LogoutHandler)              // Logout user
-		auth.POST("/token/refresh", RefreshTokenHandler) // Refresh token
-		auth.GET("/verify-token", VerifyTokenHandler)    // Verify if token is valid
+		// Protected routes (require valid Firebase ID token)
+		protected := auth.Group("/")
+		protected.Use(middleware.AuthMiddleware(authClient, ctx))
+		{
+			// Authentication & Session Management
+			protected.POST("/logout", handler.LogoutHandler)
+			protected.POST("/token/refresh", handler.RefreshTokenHandler)
+			protected.GET("/verify-token", handler.VerifyTokenHandler)
 
-		// User Account Management
-		auth.PUT("/profile", UpdateProfileHandler)           // Update user profile
-		auth.DELETE("/account", DeleteAccountHandler)        // Soft Delete account
-		auth.POST("/change-password", ChangePasswordHandler) // Change password
+			// User Account Management
+			protected.GET("/profile", handler.GetProfileHandler)
+			protected.PUT("/profile", handler.UpdateProfileHandler)
+			protected.DELETE("/account", handler.DeleteAccountHandler)
+			protected.POST("/change-password", handler.ChangePasswordHandler)
+			protected.POST("/change-login", handler.ChangeLoginHandler)
 
-		// Contact & Credential Management
-		auth.POST("/verify-email", VerifyEmailHandler)               // Send email verification
-		auth.POST("/verify-phone", VerifyPhoneHandler)               // Send phone verification
-		auth.POST("/resend-verification", ResendVerificationHandler) // Resend email/phone verification
+			// Contact & Credential Management
+			protected.POST("/verify-email", handler.VerifyEmailHandler)
+			protected.POST("/verify-phone", handler.VerifyPhoneHandler)
+			protected.POST("/add-credential", handler.AddAltCredentialHandler)
 
-		// 2FA Management
-		auth.POST("/2fa/verify", Verify2FAHandler)     // Verify 2FA during login
-		auth.DELETE("/2fa/disable", Disable2FAHandler) // Disable 2FA
-		auth.GET("/2fa/status", Get2FAStatusHandler)   // Get 2FA status
+			// 2FA Management
+			protected.POST("/2fa", handler.Enable2FAHandler)
+			protected.POST("/2fa/verify", handler.Verify2FAHandler)
+			protected.DELETE("/2fa/disable", handler.Disable2FAHandler)
+			protected.GET("/2fa/status", handler.Get2FAStatusHandler)
+		}
 	}
 }

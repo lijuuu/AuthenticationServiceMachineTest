@@ -14,7 +14,7 @@ type ErrorResponse struct {
 	Code    int    `json:"code"`
 }
 
-// TokenResponse - Response format for token-related endpoints (e.g., login, refresh token)
+// TokenResponse - Response format for token-related endpoints
 type TokenResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
@@ -26,13 +26,18 @@ type ProfileResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
 	Payload struct {
-		Username  string `json:"username"`
-		Email     string `json:"email"`
-		CreatedAt string `json:"created_at"`
+		Username      string `json:"username"`
+		Email         string `json:"email"`
+		Phone         string `json:"phone"`
+		CreatedAt     string `json:"created_at"`
+		Bio           string `json:"bio"`
+		ImageURL      string `json:"image_url"`
+		EmailVerified bool   `json:"email_verified"`
+		PhoneVerified bool   `json:"phone_verified"`
 	} `json:"payload"`
 }
 
-// 2FAStatusResponse - Response format for 2FA status
+// TwoFAStatusResponse - Response format for 2FA status
 type TwoFAStatusResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
@@ -41,9 +46,9 @@ type TwoFAStatusResponse struct {
 	} `json:"payload"`
 }
 
-// ResendVerificationResponse - Response for resending email/phone verification
+// ResendVerificationResponse - Response for resending verification
 type ResendVerificationResponse struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
+	Status  string      `json:"status"`
+	Message string      `json:"message"`
 	Payload interface{} `json:"payload,omitempty"`
 }
