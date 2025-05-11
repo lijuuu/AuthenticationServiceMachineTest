@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/gin-gonic/gin"
 	"github.com/lijuuu/AuthenticationServiceMachineTest/config"
 	api "github.com/lijuuu/AuthenticationServiceMachineTest/internal/api"
 	firebaseclient "github.com/lijuuu/AuthenticationServiceMachineTest/internal/firebase"
@@ -39,6 +40,8 @@ func main() {
 	authHandler := api.NewHandler(authService)
 
 	// start gin and attach routes
-	engine := api.StartSafeServer(configs.Server.Port)
+	engine := gin.Default()
 	api.RegisterAuthRoutes(engine, authHandler, fbClients.AuthClient, ctx)
+
+	engine.Run(configs.Server.Port)
 }

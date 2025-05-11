@@ -2,10 +2,11 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/model"
-	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/service"
+	services "github.com/lijuuu/AuthenticationServiceMachineTest/internal/service"
 )
 
 // Handler holds the AuthService dependency
@@ -30,6 +31,17 @@ func (h *Handler) SignupHandler(c *gin.Context) {
 		return
 	}
 
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
+	req.Phone = strings.ReplaceAll(req.Phone, " ", "")
+
 	resp, err := h.Auth.Signup(req)
 	if err != nil {
 		c.JSON(err.Code, err)
@@ -46,6 +58,15 @@ func (h *Handler) LoginHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
 			Message: "Invalid request body",
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
 			Code:    http.StatusBadRequest,
 		})
 		return
@@ -83,6 +104,15 @@ func (h *Handler) VerifyCredentialsHandler(c *gin.Context) {
 		return
 	}
 
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
 	resp, err := h.Auth.VerifyCredentials(req)
 	if err != nil {
 		c.JSON(err.Code, err)
@@ -104,6 +134,15 @@ func (h *Handler) ForgotPasswordHandler(c *gin.Context) {
 		return
 	}
 
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
 	resp, err := h.Auth.ForgotPassword(req)
 	if err != nil {
 		c.JSON(err.Code, err)
@@ -120,6 +159,14 @@ func (h *Handler) ResetPasswordHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
 			Message: "Invalid request body",
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
 			Code:    http.StatusBadRequest,
 		})
 		return
@@ -146,6 +193,15 @@ func (h *Handler) ChangeLoginHandler(c *gin.Context) {
 		return
 	}
 
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
 	resp, err := h.Auth.ChangeLogin(req)
 	if err != nil {
 		c.JSON(err.Code, err)
@@ -167,6 +223,15 @@ func (h *Handler) Enable2FAHandler(c *gin.Context) {
 		return
 	}
 
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
 	resp, err := h.Auth.Enable2FA(req)
 	if err != nil {
 		c.JSON(err.Code, err)
@@ -183,6 +248,14 @@ func (h *Handler) AddAltCredentialHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
 			Message: "Invalid request body",
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
 			Code:    http.StatusBadRequest,
 		})
 		return
@@ -233,6 +306,15 @@ func (h *Handler) RefreshTokenHandler(c *gin.Context) {
 		return
 	}
 
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
 	resp, err := h.Auth.RefreshToken(req)
 	if err != nil {
 		c.JSON(err.Code, err)
@@ -275,6 +357,15 @@ func (h *Handler) UpdateProfileHandler(c *gin.Context) {
 		return
 	}
 
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
 	uid := c.MustGet("uid").(string)
 
 	resp, err := h.Auth.UpdateProfile(uid, req)
@@ -311,6 +402,15 @@ func (h *Handler) ChangePasswordHandler(c *gin.Context) {
 		return
 	}
 
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
 	uid := c.MustGet("uid").(string)
 
 	resp, err := h.Auth.ChangePassword(uid, req)
@@ -329,6 +429,15 @@ func (h *Handler) VerifyEmailHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
 			Message: "Invalid request body",
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
 			Code:    http.StatusBadRequest,
 		})
 		return
@@ -355,6 +464,15 @@ func (h *Handler) VerifyPhoneHandler(c *gin.Context) {
 		return
 	}
 
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
 	resp, err := h.Auth.VerifyPhone(req)
 	if err != nil {
 		c.JSON(err.Code, err)
@@ -376,6 +494,15 @@ func (h *Handler) ResendVerificationHandler(c *gin.Context) {
 		return
 	}
 
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
 	resp, err := h.Auth.ResendVerification(req)
 	if err != nil {
 		c.JSON(err.Code, err)
@@ -392,6 +519,15 @@ func (h *Handler) Verify2FAHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
 			Message: "Invalid request body",
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
+	if err := model.ValidateRequest(req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body " + err.Error(),
 			Code:    http.StatusBadRequest,
 		})
 		return

@@ -27,7 +27,7 @@ func SendVerification(ctx context.Context, firestoreClient *firestore.Client, cf
 // sendEmailVerification sends an OTP via email using Resend.com
 func sendEmailVerification(cfg *config.Config, email, otp, verificationType string) error {
 	if cfg.Resend.APIKey == "" {
-		return fmt.Errorf("Resend API key not set in configuration")
+		return fmt.Errorf("resend API key not set in configuration")
 	}
 
 	client := resend.NewClient(cfg.Resend.APIKey)
@@ -57,7 +57,7 @@ func sendEmailVerification(cfg *config.Config, email, otp, verificationType stri
 // sendPhoneVerification sends an OTP via SMS using Twilio
 func sendPhoneVerification(cfg *config.Config, phone, otp string) error {
 	if cfg.Twilio.AccountSID == "" || cfg.Twilio.AuthToken == "" || cfg.Twilio.PhoneNumber == "" {
-		return fmt.Errorf("Twilio credentials not set in configuration")
+		return fmt.Errorf("twilio credentials not set in configuration")
 	}
 
 	client := twilio.NewRestClientWithParams(twilio.ClientParams{

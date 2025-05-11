@@ -9,6 +9,8 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"firebase.google.com/go/auth"
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/lijuuu/AuthenticationServiceMachineTest/config"
 	firebaseclient "github.com/lijuuu/AuthenticationServiceMachineTest/internal/firebase"
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/model"
@@ -75,10 +77,24 @@ func (r *FirebaseRepository) Signup(req model.SignupRequest) (model.SuccessRespo
 		}
 	}
 
+	// Hash password with bcrypt
+	hashedPassword := req.Password
+	if req.Password != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return model.SuccessResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Failed to hash password: " + err.Error(),
+				Code:    500,
+			}
+		}
+		hashedPassword = string(hash)
+	}
+
 	params := (&auth.UserToCreate{}).
 		Email(req.Email).
 		PhoneNumber(req.Phone).
-		Password(req.Password).
+		Password(hashedPassword).
 		DisplayName(req.Username)
 
 	user, err := r.authClient.CreateUser(r.ctx, params)
@@ -90,20 +106,35 @@ func (r *FirebaseRepository) Signup(req model.SignupRequest) (model.SuccessRespo
 		}
 	}
 
-	// Store user profile in Firestore
+	// Store user profile in Firestore with all required fields
+	currentTime := time.Now().Format(time.RFC3339)
+	joint := []string{"Capcons"}
+	isBillable := req.Password != "" && contains(joint, "Capcons")
+
 	profile := map[string]interface{}{
 		"uid":                        user.UID,
 		"email":                      req.Email,
 		"phone":                      req.Phone,
+		"is_phone_verified":          false,
+		"is_email_verified":          false,
+		"is_guest_user":              false,
+		"password":                   hashedPassword,
+		"joint":                      joint,
+		"is_billable_user":           isBillable,
+		"is_2f_needed":               false,
+		"first_name":                 req.FirstName,
+		"second_name":                req.SecondName,
+		"user_created_date":          currentTime,
+		"user_last_login_details":    currentTime,
+		"country_of_origin":          "",
+		"address":                    "",
 		"username":                   req.Username,
-		"created_at":                 time.Now().Format(time.RFC3339),
-		"updated_at":                 time.Now().Format(time.RFC3339),
+		"created_at":                 currentTime,
+		"updated_at":                 currentTime,
 		"2fa_enabled":                false,
 		"totp_secret":                "",
 		"bio":                        "",
 		"image_url":                  "",
-		"email_verified":             false,
-		"phone_verified":             false,
 		"email_verification_pending": false,
 		"phone_verification_pending": false,
 		"password_reset_pending":     false,
@@ -136,10 +167,12 @@ func (r *FirebaseRepository) Signup(req model.SignupRequest) (model.SuccessRespo
 		Status:  "success",
 		Message: "User created successfully",
 		Payload: map[string]interface{}{
-			"uid":      user.UID,
-			"email":    req.Email,
-			"phone":    req.Phone,
-			"username": req.Username,
+			"uid":         user.UID,
+			"email":       req.Email,
+			"phone":       req.Phone,
+			"username":    req.Username,
+			"first_name":  req.FirstName,
+			"second_name": req.SecondName,
 		},
 	}, nil
 }
@@ -163,7 +196,45 @@ func (r *FirebaseRepository) Login(req model.LoginRequest) (model.TokenResponse,
 		}
 	}
 
-	// Firebase doesn't verify passwords server-side; assume client-side auth
+	// Verify password
+	doc, err := r.firestoreClient.Collection("users").Doc(user.UID).Get(r.ctx)
+	if err != nil {
+		return model.TokenResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to retrieve profile: " + err.Error(),
+			Code:    500,
+		}
+	}
+	data := doc.Data()
+	storedPassword, ok := data["password"].(string)
+	if !ok || storedPassword == "" {
+		return model.TokenResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "No password set for this user",
+			Code:    401,
+		}
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(req.Password)); err != nil {
+		return model.TokenResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid password",
+			Code:    401,
+		}
+	}
+
+	// Update last login details
+	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
+		{Path: "user_last_login_details", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+	})
+	if err != nil {
+		return model.TokenResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to update login details: " + err.Error(),
+			Code:    500,
+		}
+	}
+
 	token, err := r.authClient.CustomToken(r.ctx, user.UID)
 	if err != nil {
 		return model.TokenResponse{}, &model.ErrorResponse{
@@ -205,19 +276,31 @@ func (r *FirebaseRepository) GuestLogin(req model.GuestLoginRequest) (model.Toke
 	}
 
 	// Store guest profile in Firestore
+	currentTime := time.Now().Format(time.RFC3339)
 	profile := map[string]interface{}{
 		"uid":                        user.UID,
-		"username":                   req.Username,
 		"email":                      "",
 		"phone":                      "",
-		"created_at":                 time.Now().Format(time.RFC3339),
-		"updated_at":                 time.Now().Format(time.RFC3339),
+		"is_phone_verified":          false,
+		"is_email_verified":          false,
+		"is_guest_user":              true,
+		"password":                   "",
+		"joint":                      []any{"Capcons"},
+		"is_billable_user":           false,
+		"is_2f_needed":               false,
+		"first_name":                 "",
+		"second_name":                "",
+		"user_created_date":          currentTime,
+		"user_last_login_details":    currentTime,
+		"country_of_origin":          "",
+		"address":                    "",
+		"username":                   req.Username,
+		"created_at":                 currentTime,
+		"updated_at":                 currentTime,
 		"2fa_enabled":                false,
 		"totp_secret":                "",
 		"bio":                        "",
 		"image_url":                  "",
-		"email_verified":             false,
-		"phone_verified":             false,
 		"email_verification_pending": false,
 		"phone_verification_pending": false,
 		"password_reset_pending":     false,
@@ -259,10 +342,36 @@ func (r *FirebaseRepository) VerifyCredentials(req model.VerifyCredentialsReques
 		}
 	}
 
+	// Verify password
+	doc, err := r.firestoreClient.Collection("users").Doc(user.UID).Get(r.ctx)
+	if err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to retrieve profile: " + err.Error(),
+			Code:    500,
+		}
+	}
+	data := doc.Data()
+	storedPassword, ok := data["password"].(string)
+	if !ok || storedPassword == "" {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "No password set for this user",
+			Code:    401,
+		}
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(req.Password)); err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid password",
+			Code:    401,
+		}
+	}
+
 	return model.SuccessResponse{
 		Status:  "success",
 		Message: "Credentials verified",
-		Payload: map[string]string{
+		Payload: map[string]any{
 			"uid": user.UID,
 		},
 	}, nil
@@ -309,8 +418,19 @@ func (r *FirebaseRepository) ResetPassword(req model.ResetPasswordRequest) (mode
 		}
 	}
 
+	// Hash new password
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to hash password: " + err.Error(),
+			Code:    500,
+		}
+	}
+	hashedPassword := string(hash)
+
 	// Update the user's password
-	_, err = r.authClient.UpdateUser(r.ctx, uid, (&auth.UserToUpdate{}).Password(req.Password))
+	_, err = r.authClient.UpdateUser(r.ctx, uid, (&auth.UserToUpdate{}).Password(hashedPassword))
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
@@ -319,15 +439,16 @@ func (r *FirebaseRepository) ResetPassword(req model.ResetPasswordRequest) (mode
 		}
 	}
 
-	// Update Firestore to clear password reset pending status
+	// Update Firestore profile
 	_, err = r.firestoreClient.Collection("users").Doc(uid).Update(r.ctx, []firestore.Update{
+		{Path: "password", Value: hashedPassword},
 		{Path: "password_reset_pending", Value: false},
 		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
 	})
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
-			Message: "Failed to update profile: " + err.Error(),
+			Message: " MOBILE_NUMBER_ALREADY_EXISTSFailed to update profile: " + err.Error(),
 			Code:    500,
 		}
 	}
@@ -385,6 +506,17 @@ func (r *FirebaseRepository) ChangeLogin(req model.ChangeLoginRequest) (model.Su
 		}
 	}
 
+	// Hash new password
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to hash password: " + err.Error(),
+			Code:    500,
+		}
+	}
+	hashedPassword := string(hash)
+
 	update := &auth.UserToUpdate{}
 	if req.NewEmail != "" {
 		update = update.Email(req.NewEmail)
@@ -392,7 +524,7 @@ func (r *FirebaseRepository) ChangeLogin(req model.ChangeLoginRequest) (model.Su
 	if req.NewPhone != "" {
 		update = update.PhoneNumber(req.NewPhone)
 	}
-	update = update.Password(req.NewPassword)
+	update = update.Password(hashedPassword)
 	_, err = r.authClient.UpdateUser(r.ctx, user.UID, update)
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
@@ -402,17 +534,29 @@ func (r *FirebaseRepository) ChangeLogin(req model.ChangeLoginRequest) (model.Su
 		}
 	}
 
+	docRef := r.firestoreClient.Collection("users").Doc(user.UID)
+	doc, err := docRef.Get(r.ctx)
+	if err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to fetch user document: " + err.Error(),
+			Code:    500,
+		}
+	}
+
 	// Update Firestore profile
 	updates := []firestore.Update{
+		{Path: "password", Value: hashedPassword},
+		{Path: "is_billable_user", Value: contains(doc.Data()["joint"].([]string), "Capcons")},
 		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
 	}
 	if req.NewEmail != "" {
 		updates = append(updates, firestore.Update{Path: "email", Value: req.NewEmail})
-		updates = append(updates, firestore.Update{Path: "email_verified", Value: false})
+		updates = append(updates, firestore.Update{Path: "is_email_verified", Value: false})
 	}
 	if req.NewPhone != "" {
 		updates = append(updates, firestore.Update{Path: "phone", Value: req.NewPhone})
-		updates = append(updates, firestore.Update{Path: "phone_verified", Value: false})
+		updates = append(updates, firestore.Update{Path: "is_phone_verified", Value: false})
 	}
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, updates)
 	if err != nil {
@@ -473,7 +617,7 @@ func (r *FirebaseRepository) Enable2FA(req model.Enable2FARequest) (model.Succes
 
 	// Generate TOTP secret
 	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      "YourApp",
+		Issuer:      "AuthenticationServiceMachineTest",
 		AccountName: req.Email,
 	})
 	if err != nil {
@@ -487,6 +631,7 @@ func (r *FirebaseRepository) Enable2FA(req model.Enable2FARequest) (model.Succes
 	// Store TOTP secret and enable 2FA in Firestore
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
 		{Path: "2fa_enabled", Value: true},
+		{Path: "is_2f_needed", Value: true}, // Set if admin status is determined elsewhere
 		{Path: "totp_secret", Value: key.Secret()},
 		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
 	})
@@ -501,7 +646,7 @@ func (r *FirebaseRepository) Enable2FA(req model.Enable2FARequest) (model.Succes
 	return model.SuccessResponse{
 		Status:  "success",
 		Message: "2FA enabled successfully",
-		Payload: map[string]string{
+		Payload: map[string]any{
 			"totp_secret": key.Secret(),
 			"totp_url":    key.URL(),
 		},
@@ -548,11 +693,11 @@ func (r *FirebaseRepository) AddAltCredential(req model.AddAltCredentialRequest)
 	if strings.Contains(req.Credential, "@") {
 		update = update.Email(req.Credential)
 		updates = append(updates, firestore.Update{Path: "email", Value: req.Credential})
-		updates = append(updates, firestore.Update{Path: "email_verified", Value: false})
+		updates = append(updates, firestore.Update{Path: "is_email_verified", Value: false})
 	} else {
 		update = update.PhoneNumber(req.Credential)
 		updates = append(updates, firestore.Update{Path: "phone", Value: req.Credential})
-		updates = append(updates, firestore.Update{Path: "phone_verified", Value: false})
+		updates = append(updates, firestore.Update{Path: "is_phone_verified", Value: false})
 	}
 
 	// Update Firebase Authentication
@@ -618,14 +763,25 @@ func (r *FirebaseRepository) GetProfile(uid string) (model.ProfileResponse, *mod
 		Status:  "success",
 		Message: "Profile retrieved successfully",
 	}
-	resp.Payload.Username = data["username"].(string)
+	resp.Payload.UID = data["uid"].(string)
 	resp.Payload.Email = data["email"].(string)
 	resp.Payload.Phone = data["phone"].(string)
+	resp.Payload.IsPhoneVerified = data["is_phone_verified"].(bool)
+	resp.Payload.IsEmailVerified = data["is_email_verified"].(bool)
+	resp.Payload.IsGuestUser = data["is_guest_user"].(bool)
+	resp.Payload.Joint = data["joint"].([]string)
+	resp.Payload.IsBillableUser = data["is_billable_user"].(bool)
+	resp.Payload.Is2FNeeded = data["is_2f_needed"].(bool)
+	resp.Payload.FirstName = data["first_name"].(string)
+	resp.Payload.SecondName = data["second_name"].(string)
+	resp.Payload.UserCreatedDate = data["user_created_date"].(string)
+	resp.Payload.UserLastLoginDetails = data["user_last_login_details"].(string)
+	resp.Payload.CountryOfOrigin = data["country_of_origin"].(string)
+	resp.Payload.Address = data["address"].(string)
+	resp.Payload.Username = data["username"].(string)
 	resp.Payload.CreatedAt = data["created_at"].(string)
 	resp.Payload.Bio = data["bio"].(string)
 	resp.Payload.ImageURL = data["image_url"].(string)
-	resp.Payload.EmailVerified = data["email_verified"].(bool)
-	resp.Payload.PhoneVerified = data["phone_verified"].(bool)
 
 	return resp, nil
 }
@@ -654,6 +810,19 @@ func (r *FirebaseRepository) RefreshToken(req model.RefreshTokenRequest) (model.
 		return model.TokenResponse{}, &model.ErrorResponse{
 			Status:  "error",
 			Message: "Failed to generate new token: " + err.Error(),
+			Code:    500,
+		}
+	}
+
+	// Update last login details
+	_, err = r.firestoreClient.Collection("users").Doc(decoded.UID).Update(r.ctx, []firestore.Update{
+		{Path: "user_last_login_details", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+	})
+	if err != nil {
+		return model.TokenResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to update login details: " + err.Error(),
 			Code:    500,
 		}
 	}
@@ -687,7 +856,7 @@ func (r *FirebaseRepository) VerifyToken(token string) (model.SuccessResponse, *
 	return model.SuccessResponse{
 		Status:  "success",
 		Message: "Token verified successfully",
-		Payload: map[string]string{
+		Payload: map[string]any{
 			"uid": decoded.UID,
 		},
 	}, nil
@@ -706,14 +875,25 @@ func (r *FirebaseRepository) UpdateProfile(uid string, req model.UpdateProfileRe
 	updates := []firestore.Update{
 		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
 	}
-	if req.Username != "" {
+	if *req.Username != "" {
 		updates = append(updates, firestore.Update{Path: "username", Value: req.Username})
 	}
-	if req.Bio != "" {
+	if *req.Bio != "" {
 		updates = append(updates, firestore.Update{Path: "bio", Value: req.Bio})
 	}
-	if req.ImageURL != "" {
-		updates = append(updates, firestore.Update{Path: "image_url", Value: req.ImageURL})
+
+	// Allow updating optional fields
+	if req.FirstName != nil {
+		updates = append(updates, firestore.Update{Path: "first_name", Value: *req.FirstName})
+	}
+	if req.SecondName != nil {
+		updates = append(updates, firestore.Update{Path: "second_name", Value: *req.SecondName})
+	}
+	if req.CountryOfOrigin != nil {
+		updates = append(updates, firestore.Update{Path: "country_of_origin", Value: *req.CountryOfOrigin})
+	}
+	if req.Address != nil {
+		updates = append(updates, firestore.Update{Path: "address", Value: *req.Address})
 	}
 
 	_, err := r.firestoreClient.Collection("users").Doc(uid).Update(r.ctx, updates)
@@ -727,8 +907,8 @@ func (r *FirebaseRepository) UpdateProfile(uid string, req model.UpdateProfileRe
 
 	// Update Firebase Authentication
 	userUpdate := &auth.UserToUpdate{}
-	if req.Username != "" {
-		userUpdate = userUpdate.DisplayName(req.Username)
+	if *req.Username != "" {
+		userUpdate = userUpdate.DisplayName(*req.Username)
 	}
 	_, err = r.authClient.UpdateUser(r.ctx, uid, userUpdate)
 	if err != nil {
@@ -789,12 +969,63 @@ func (r *FirebaseRepository) ChangePassword(uid string, req model.ChangePassword
 		}
 	}
 
-	_, err := r.authClient.UpdateUser(r.ctx, uid, (&auth.UserToUpdate{}).Password(req.NewPassword))
+	// Verify old password
+	doc, err := r.firestoreClient.Collection("users").Doc(uid).Get(r.ctx)
+	if err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to retrieve profile: " + err.Error(),
+			Code:    500,
+		}
+	}
+	data := doc.Data()
+	storedPassword, ok := data["password"].(string)
+	if !ok || storedPassword == "" {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "No password set for this user",
+			Code:    401,
+		}
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(req.OldPassword)); err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid old password",
+			Code:    401,
+		}
+	}
+
+	// Hash new password
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to hash password: " + err.Error(),
+			Code:    500,
+		}
+	}
+	hashedPassword := string(hash)
+
+	// Update password
+	_, err = r.authClient.UpdateUser(r.ctx, uid, (&auth.UserToUpdate{}).Password(hashedPassword))
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
 			Message: "Failed to change password: " + err.Error(),
 			Code:    400,
+		}
+	}
+
+	// Update Firestore profile
+	_, err = r.firestoreClient.Collection("users").Doc(uid).Update(r.ctx, []firestore.Update{
+		{Path: "password", Value: hashedPassword},
+		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+	})
+	if err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to update profile: " + err.Error(),
+			Code:    500,
 		}
 	}
 
@@ -852,7 +1083,7 @@ func (r *FirebaseRepository) VerifyEmail(req model.VerifyEmailRequest) (model.Su
 
 	// Update Firestore profile
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
-		{Path: "email_verified", Value: true},
+		{Path: "is_email_verified", Value: true},
 		{Path: "email_verification_pending", Value: false},
 		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
 	})
@@ -914,7 +1145,7 @@ func (r *FirebaseRepository) VerifyPhone(req model.VerifyPhoneRequest) (model.Su
 
 	// Update Firestore profile
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
-		{Path: "phone_verified", Value: true},
+		{Path: "is_phone_verified", Value: true},
 		{Path: "phone_verification_pending", Value: false},
 		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
 	})
@@ -978,7 +1209,7 @@ func (r *FirebaseRepository) ResendVerification(req model.ResendVerificationRequ
 			Code:    400,
 		}
 	}
-	if field == "phone" {
+	if field == "phone"  {
 		doc, err := r.firestoreClient.Collection("users").Doc(user.UID).Get(r.ctx)
 		if err != nil {
 			return model.ResendVerificationResponse{}, &model.ErrorResponse{
@@ -987,7 +1218,7 @@ func (r *FirebaseRepository) ResendVerification(req model.ResendVerificationRequ
 				Code:    404,
 			}
 		}
-		if doc.Data()["phone_verified"].(bool) {
+		if doc.Data()["is_phone_verified"].(bool) {
 			return model.ResendVerificationResponse{}, &model.ErrorResponse{
 				Status:  "error",
 				Message: "Phone is already verified",
@@ -1122,6 +1353,7 @@ func (r *FirebaseRepository) Disable2FA(uid string) (model.SuccessResponse, *mod
 
 	_, err := r.firestoreClient.Collection("users").Doc(uid).Update(r.ctx, []firestore.Update{
 		{Path: "2fa_enabled", Value: false},
+		{Path: "is_2f_needed", Value: false},
 		{Path: "totp_secret", Value: ""},
 		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
 	})
@@ -1233,7 +1465,7 @@ func (r *FirebaseRepository) SendPasswordResetEmail(req model.ForgotPasswordRequ
 	return model.SuccessResponse{
 		Status:  "success",
 		Message: "Password reset OTP sent successfully",
-		Payload: map[string]string{
+		Payload: map[string]any{
 			"email": req.Email,
 		},
 	}, nil
@@ -1259,7 +1491,7 @@ func (r *FirebaseRepository) SendPhoneVerification(phone string) (model.SuccessR
 			Code:    404,
 		}
 	}
-	if doc.Data()["phone_verified"].(bool) {
+	if doc.Data()["is_phone_verified"].(bool) {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
 			Message: "Phone is already verified",
@@ -1317,7 +1549,7 @@ func (r *FirebaseRepository) SendPhoneVerification(phone string) (model.SuccessR
 	return model.SuccessResponse{
 		Status:  "success",
 		Message: "Phone verification OTP sent successfully",
-		Payload: map[string]string{
+		Payload: map[string]any{
 			"phone": phone,
 		},
 	}, nil
@@ -1393,8 +1625,18 @@ func (r *FirebaseRepository) SendEmailVerification(email string) (model.SuccessR
 	return model.SuccessResponse{
 		Status:  "success",
 		Message: "Email verification OTP sent successfully",
-		Payload: map[string]string{
+		Payload: map[string]any{
 			"email": email,
 		},
 	}, nil
+}
+
+// contains checks if a string slice contains a specific value
+func contains(slice []string, value string) bool {
+	for _, item := range slice {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }

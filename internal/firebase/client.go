@@ -21,7 +21,11 @@ type FirebaseClients struct {
 func NewFirebaseClients(ctx context.Context, cfg *config.Config) (*FirebaseClients, error) {
 	opt := option.WithCredentialsFile(cfg.Firebase.CredentialsPath)
 
-	app, err := firebase.NewApp(ctx, nil, opt)
+	appConfig := &firebase.Config{
+		ProjectID: cfg.Firebase.Credentials.ProjectID,
+	}
+
+	app, err := firebase.NewApp(ctx, appConfig, opt)
 	if err != nil {
 		return nil, fmt.Errorf("error initializing Firebase app: %v", err)
 	}

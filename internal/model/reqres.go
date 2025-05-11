@@ -23,12 +23,20 @@ func ValidateRequest(req interface{}) error {
 	return nil
 }
 
+type ErrorResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Code    int    `json:"code"`
+}
+
 // SignupRequest - Structure for the user signup request
 type SignupRequest struct {
-	Email    string `json:"email" validate:"required_without=Phone,email"`
-	Phone    string `json:"phone" validate:"required_without=Email,e164"`
-	Password string `json:"password" validate:"required,min=8"`
-	Username string `json:"username" validate:"required,min=3"`
+	Email      string `json:"email" validate:"required_without=Phone,email"`
+	Phone      string `json:"phone" validate:"required_without=Email,e164"`
+	Password   string `json:"password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789,containsany=!@#$%^&*()_+-=[]{}|;:,.<>?"`
+	Username   string `json:"username" validate:"required,min=3"`
+	FirstName  string `json:"first_name" validate:"omitempty"`
+	SecondName string `json:"second_name" validate:"omitempty"`
 }
 
 // LoginRequest - Structure for the user login request
@@ -57,7 +65,7 @@ type ForgotPasswordRequest struct {
 type ResetPasswordRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	OTP      string `json:"otp" validate:"required,len=6"`
-	Password string `json:"password" validate:"required,min=8"`
+	Password string `json:"password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789,containsany=!@#$%^&*()_+-=[]{}|;:,.<>?"`
 }
 
 // ChangeLoginRequest - Structure for changing login credentials
@@ -65,7 +73,7 @@ type ChangeLoginRequest struct {
 	OldCredential string `json:"old_credential" validate:"required"`
 	NewEmail      string `json:"new_email" validate:"required_without=NewPhone,email"`
 	NewPhone      string `json:"new_phone" validate:"required_without=NewEmail,e164"`
-	NewPassword   string `json:"new_password" validate:"required,min=8"`
+	NewPassword   string `json:"new_password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789,containsany=!@#$%^&*()_+-=[]{}|;:,.<>?"`
 }
 
 // Enable2FARequest - Structure to enable 2FA request
@@ -82,7 +90,7 @@ type AddAltCredentialRequest struct {
 // ChangePasswordRequest - Structure for the change password request
 type ChangePasswordRequest struct {
 	OldPassword string `json:"old_password" validate:"required"`
-	NewPassword string `json:"new_password" validate:"required,min=8"`
+	NewPassword string `json:"new_password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789,containsany=!@#$%^&*()_+-=[]{}|;:,.<>?"`
 }
 
 // VerifyEmailRequest - Structure for email verification request
@@ -116,7 +124,68 @@ type RefreshTokenRequest struct {
 
 // UpdateProfileRequest - Structure for updating user profile
 type UpdateProfileRequest struct {
-	Username string `json:"username" validate:"omitempty,min=3"`
-	Bio      string `json:"bio" validate:"omitempty,max=160"`
-	ImageURL string `json:"image_url" validate:"omitempty,url"`
+	Username        *string `json:"username" validate:"omitempty,min=3"`
+	Bio             *string `json:"bio" validate:"omitempty,max=160"`
+	ImageURL        *string `json:"image_url" validate:"omitempty,url"`
+	FirstName       *string `json:"first_name" validate:"omitempty"`
+	SecondName      *string `json:"second_name" validate:"omitempty"`
+	CountryOfOrigin *string `json:"country_of_origin" validate:"omitempty"`
+	Address         *string `json:"address" validate:"omitempty"`
+}
+
+// SuccessResponse - Generic success response
+type SuccessResponse struct {
+	Status  string                 `json:"status"`
+	Message string                 `json:"message"`
+	Payload map[string]interface{} `json:"payload"`
+}
+
+// TokenResponse - Response for token-based operations
+type TokenResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Token   string `json:"token"`
+}
+
+// ResendVerificationResponse - Response for resend verification
+type ResendVerificationResponse struct {
+	Status  string            `json:"status"`
+	Message string            `json:"message"`
+	Payload map[string]string `json:"payload"`
+}
+
+// ProfileResponse - Response for profile retrieval
+type ProfileResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Payload struct {
+		UID                  string   `json:"uid"`
+		Email                string   `json:"email"`
+		Phone                string   `json:"phone"`
+		IsPhoneVerified      bool     `json:"is_phone_verified"`
+		IsEmailVerified      bool     `json:"is_email_verified"`
+		IsGuestUser          bool     `json:"is_guest_user"`
+		Joint                []string `json:"joint"`
+		IsBillableUser       bool     `json:"is_billable_user"`
+		Is2FNeeded           bool     `json:"is_2f_needed"`
+		FirstName            string   `json:"first_name"`
+		SecondName           string   `json:"second_name"`
+		UserCreatedDate      string   `json:"user_created_date"`
+		UserLastLoginDetails string   `json:"user_last_login_details"`
+		CountryOfOrigin      string   `json:"country_of_origin"`
+		Address              string   `json:"address"`
+		Username             string   `json:"username"`
+		CreatedAt            string   `json:"created_at"`
+		Bio                  string   `json:"bio"`
+		ImageURL             string   `json:"image_url"`
+	} `json:"payload"`
+}
+
+// TwoFAStatusResponse - Response for 2FA status
+type TwoFAStatusResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Payload struct {
+		Enabled bool `json:"enabled"`
+	} `json:"payload"`
 }
