@@ -11,6 +11,13 @@ import (
 
 // RegisterAuthRoutes sets up authentication-related routes with middleware
 func RegisterAuthRoutes(r *gin.Engine, handler *Handler, authClient *auth.Client, ctx context.Context, cfg config.Config) {
+
+	r.GET("/", func(ctx *gin.Context) {
+		ctx.JSON(200, map[string]any{
+			"success": true,
+		})
+	})
+
 	auth := r.Group("/api/v1/auth")
 	{
 		// Public routes (no authentication required)

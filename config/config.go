@@ -41,7 +41,8 @@ type Config struct {
 		PhoneNumber string `yaml:"-"`
 	} `yaml:"twilio"`
 
-	JWTSecret string
+	JWTSecret   string
+	Environment string
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -66,6 +67,10 @@ func LoadConfig(path string) (*Config, error) {
 	cfg.Twilio.AccountSID = os.Getenv("TWILIO_ACCOUNT_SID")
 	cfg.Twilio.AuthToken = os.Getenv("TWILIO_AUTH_TOKEN")
 	cfg.Twilio.PhoneNumber = os.Getenv("TWILIO_PHONE_NUMBER")
+
+	if cfg.Environment == "production" {
+		cfg.Firebase.CredentialsPath = "/etc/secrets/serviceAccountKey.json"
+	}
 
 	// load firebase credentials from json file
 	firebaseCredsData, err := os.ReadFile(cfg.Firebase.CredentialsPath)
