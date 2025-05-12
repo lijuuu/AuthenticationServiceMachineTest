@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -47,8 +48,9 @@ type Config struct {
 
 func LoadConfig(path string) (*Config, error) {
 	// load .env
-	if err := godotenv.Load(); err != nil {
-		return nil, fmt.Errorf("failed to load .env file: %w", err)
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("failed to load .env")
 	}
 
 	// read yaml
