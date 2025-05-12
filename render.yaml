@@ -10,3 +10,5 @@ services:
         value: 1.24.1
       - key: GOTOOLCHAIN
         value: auto
+      - key: PORT
+        value: 8080
