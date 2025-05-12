@@ -12,7 +12,7 @@ import (
 // RegisterAuthRoutes sets up authentication-related routes with middleware
 func RegisterAuthRoutes(r *gin.Engine, handler *Handler, authClient *auth.Client, ctx context.Context, cfg config.Config) {
 
-	r.GET("/", func(ctx *gin.Context) {
+	r.GET("/health", func(ctx *gin.Context) {
 		ctx.JSON(200, map[string]any{
 			"success": true,
 		})
