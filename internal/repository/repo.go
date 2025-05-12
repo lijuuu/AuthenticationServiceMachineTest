@@ -613,17 +613,10 @@ func (r *FirebaseRepository) ResetPassword(req model.ResetPasswordRequest) (mode
 	}, nil
 }
 
-// ChangeLogin updates the user's email and/or phone and password
+// ChangeLogin updates a user's email after verifying the password
 func (r *FirebaseRepository) ChangeLogin(req model.ChangeLoginRequest) (model.SuccessResponse, *model.ErrorResponse) {
-	var user *auth.UserRecord
-	var err error
-
-	// Check if old credential is an email or phone
-	if strings.Contains(req.OldCredential, "@") {
-		user, err = r.authClient.GetUserByEmail(r.ctx, req.OldCredential)
-	} else {
-		user, err = r.authClient.GetUserByPhoneNumber(r.ctx, req.OldCredential)
-	}
+	// Get user by UID
+	user, err := r.authClient.GetUser(r.ctx, req.UID)
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
@@ -632,56 +625,7 @@ func (r *FirebaseRepository) ChangeLogin(req model.ChangeLoginRequest) (model.Su
 		}
 	}
 
-	// Check for existing new email or phone
-	if req.NewEmail != "" {
-		_, err := r.authClient.GetUserByEmail(r.ctx, req.NewEmail)
-		if err == nil {
-			return model.SuccessResponse{}, &model.ErrorResponse{
-				Status:  "error",
-				Message: "New email already in use",
-				Code:    400,
-			}
-		}
-	}
-	if req.NewPhone != "" {
-		_, err := r.authClient.GetUserByPhoneNumber(r.ctx, req.NewPhone)
-		if err == nil {
-			return model.SuccessResponse{}, &model.ErrorResponse{
-				Status:  "error",
-				Message: "New phone number already in use",
-				Code:    400,
-			}
-		}
-	}
-
-	// Hash new password
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Failed to hash password: " + err.Error(),
-			Code:    500,
-		}
-	}
-	hashedPassword := string(hash)
-
-	update := &auth.UserToUpdate{}
-	if req.NewEmail != "" {
-		update = update.Email(req.NewEmail)
-	}
-	if req.NewPhone != "" {
-		update = update.PhoneNumber(req.NewPhone)
-	}
-	update = update.Password(hashedPassword)
-	_, err = r.authClient.UpdateUser(r.ctx, user.UID, update)
-	if err != nil {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Failed to update login credentials: " + err.Error(),
-			Code:    400,
-		}
-	}
-
+	// Get Firestore document
 	docRef := r.firestoreClient.Collection("users").Doc(user.UID)
 	doc, err := docRef.Get(r.ctx)
 	if err != nil {
@@ -692,46 +636,82 @@ func (r *FirebaseRepository) ChangeLogin(req model.ChangeLoginRequest) (model.Su
 		}
 	}
 
-	// Update Firestore profile
-	updates := []firestore.Update{
-		{Path: "password", Value: hashedPassword},
-		{Path: "is_billable_user", Value: contains(doc.Data()["joint"].([]string), "Capcons")},
-		{Path: "updated_at", Value: time.Now().UTC()},
+	// Check password
+	storedHash, ok := doc.Data()["password"].(string)
+	if !ok || storedHash == "" {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "No password set for this user",
+			Code:    401,
+		}
 	}
+	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(req.Password)); err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid password",
+			Code:    401,
+		}
+	}
+
+	// Check if new email already exists
 	if req.NewEmail != "" {
-		updates = append(updates, firestore.Update{Path: "email", Value: req.NewEmail})
-		updates = append(updates, firestore.Update{Path: "is_email_verified", Value: false})
+		_, err := r.authClient.GetUserByEmail(r.ctx, req.NewEmail)
+		if err == nil {
+			return model.SuccessResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Email already in use",
+				Code:    400,
+			}
+		}
 	}
-	if req.NewPhone != "" {
-		updates = append(updates, firestore.Update{Path: "phone", Value: req.NewPhone})
-		updates = append(updates, firestore.Update{Path: "is_phone_verified", Value: false})
-	}
-	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, updates)
+
+	// Update Firebase Authentication with new email and unverified status
+	update := (&auth.UserToUpdate{}).Email(req.NewEmail).EmailVerified(false)
+	_, err = r.authClient.UpdateUser(r.ctx, req.UID, update)
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
-			Message: "Failed to update profile: " + err.Error(),
+			Message: "Failed to update authentication: " + err.Error(),
+			Code:    400,
+		}
+	}
+
+	// Update Firestore in a transaction
+	err = r.firestoreClient.RunTransaction(r.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		return tx.Update(docRef, []firestore.Update{
+			{Path: "email", Value: req.NewEmail},
+			{Path: "is_email_verified", Value: false},
+			{Path: "email_verification_pending", Value: true},
+			{Path: "updated_at", Value: time.Now().UTC()},
+		})
+	})
+	if err != nil {
+		// Attempt to revert Firebase Authentication update
+		_, revertErr := r.authClient.UpdateUser(r.ctx, req.UID, (&auth.UserToUpdate{}).Email(user.Email).EmailVerified(user.EmailVerified))
+		if revertErr != nil {
+			log.Printf("Failed to revert auth email update for UID %s: %v", req.UID, revertErr)
+		}
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to update Firestore: " + err.Error(),
 			Code:    500,
 		}
 	}
 
-	// Send verification for new email or phone
-	if req.NewEmail != "" {
-		_, errResp := r.SendEmailVerification(req.NewEmail)
-		if errResp != nil {
-			return model.SuccessResponse{}, errResp
-		}
-	}
-	if req.NewPhone != "" {
-		_, errResp := r.SendPhoneVerification(req.NewPhone)
-		if errResp != nil {
-			return model.SuccessResponse{}, errResp
-		}
+	// Send verification email
+	_, errResp := r.SendEmailVerification(req.NewEmail)
+	if errResp != nil {
+		// Log the error but don't fail, as the email update was successful
+		log.Printf("Failed to send verification email for %s: %v", req.NewEmail, errResp.Message)
+		return model.SuccessResponse{
+			Status:  "success",
+			Message: "Email updated successfully, but failed to send verification email",
+		}, nil
 	}
 
 	return model.SuccessResponse{
 		Status:  "success",
-		Message: "Login credentials updated successfully",
+		Message: "Email updated and verification email sent",
 	}, nil
 }
 
@@ -1148,140 +1128,6 @@ func (r *FirebaseRepository) ChangePassword(uid string, req model.ChangePassword
 	return model.SuccessResponse{
 		Status:  "success",
 		Message: "Password changed successfully",
-	}, nil
-}
-
-// VerifyEmail verifies the user's email using an OTP
-func (r *FirebaseRepository) VerifyEmail(req model.VerifyEmailRequest) (model.SuccessResponse, *model.ErrorResponse) {
-	user, err := r.authClient.GetUserByEmail(r.ctx, req.Email)
-	if err != nil {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "User not found",
-			Code:    404,
-		}
-	}
-
-	// Find the OTP in the otps collection
-	query := r.firestoreClient.Collection("otps").
-		Where("email", "==", req.Email).
-		Where("type", "==", "email_verification").
-		Where("otp", "==", req.OTP).
-		Limit(1)
-	docs, err := query.Documents(r.ctx).GetAll()
-	if err != nil || len(docs) == 0 {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid or expired OTP",
-			Code:    400,
-		}
-	}
-
-	otpData := docs[0].Data()
-	expiresAt, ok := otpData["expires_at"].(time.Time)
-	if !ok || expiresAt.Before(time.Now()) {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "OTP has expired",
-			Code:    400,
-		}
-	}
-
-	// Update Firebase Authentication
-	_, err = r.authClient.UpdateUser(r.ctx, user.UID, (&auth.UserToUpdate{}).EmailVerified(true))
-	if err != nil {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Failed to verify email: " + err.Error(),
-			Code:    400,
-		}
-	}
-
-	// Update Firestore profile
-	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
-		{Path: "is_email_verified", Value: true},
-		{Path: "email_verification_pending", Value: false},
-		{Path: "updated_at", Value: time.Now().UTC()},
-	})
-	if err != nil {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Failed to update profile: " + err.Error(),
-			Code:    500,
-		}
-	}
-
-	// Delete the used OTP
-	_, err = r.firestoreClient.Collection("otps").Doc(docs[0].Ref.ID).Delete(r.ctx)
-	if err != nil {
-		fmt.Printf("Failed to delete OTP: %v\n", err)
-	}
-
-	return model.SuccessResponse{
-		Status:  "success",
-		Message: "Email verified successfully",
-	}, nil
-}
-
-// VerifyPhone verifies the user's phone using an OTP
-func (r *FirebaseRepository) VerifyPhone(req model.VerifyPhoneRequest) (model.SuccessResponse, *model.ErrorResponse) {
-	user, err := r.authClient.GetUserByPhoneNumber(r.ctx, req.Phone)
-	if err != nil {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "User not found",
-			Code:    404,
-		}
-	}
-
-	// Find the OTP in the otps collection
-	query := r.firestoreClient.Collection("otps").
-		Where("phone", "==", req.Phone).
-		Where("type", "==", "phone_verification").
-		Where("otp", "==", req.OTP).
-		Limit(1)
-	docs, err := query.Documents(r.ctx).GetAll()
-	if err != nil || len(docs) == 0 {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid or expired OTP",
-			Code:    400,
-		}
-	}
-
-	otpData := docs[0].Data()
-	expiresAt, ok := otpData["expires_at"].(time.Time)
-	if !ok || expiresAt.Before(time.Now()) {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "OTP has expired",
-			Code:    400,
-		}
-	}
-
-	// Update Firestore profile
-	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
-		{Path: "is_phone_verified", Value: true},
-		{Path: "phone_verification_pending", Value: false},
-		{Path: "updated_at", Value: time.Now().UTC()},
-	})
-	if err != nil {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Failed to update profile: " + err.Error(),
-			Code:    500,
-		}
-	}
-
-	// Delete the used OTP
-	_, err = r.firestoreClient.Collection("otps").Doc(docs[0].Ref.ID).Delete(r.ctx)
-	if err != nil {
-		fmt.Printf("Failed to delete OTP: %v\n", err)
-	}
-
-	return model.SuccessResponse{
-		Status:  "success",
-		Message: "Phone verified successfully",
 	}, nil
 }
 

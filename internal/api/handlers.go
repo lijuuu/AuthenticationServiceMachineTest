@@ -204,6 +204,8 @@ func (h *Handler) ChangeLoginHandler(c *gin.Context) {
 		return
 	}
 
+	req.UID = c.MustGet("uid").(string)
+
 	if err := model.ValidateRequest(req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
@@ -282,17 +284,6 @@ func (h *Handler) GetProfileHandler(c *gin.Context) {
 	uid := c.MustGet("uid").(string)
 
 	resp, err := h.Auth.GetProfile(uid)
-	if err != nil {
-		c.JSON(err.Code, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
-}
-
-// LogoutHandler handles logout requests
-func (h *Handler) LogoutHandler(c *gin.Context) {
-	resp, err := h.Auth.Logout()
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -384,66 +375,6 @@ func (h *Handler) ChangePasswordHandler(c *gin.Context) {
 	uid := c.MustGet("uid").(string)
 
 	resp, err := h.Auth.ChangePassword(uid, req)
-	if err != nil {
-		c.JSON(err.Code, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
-}
-
-// VerifyEmailHandler handles email verification requests
-func (h *Handler) VerifyEmailHandler(c *gin.Context) {
-	var req model.VerifyEmailRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid request body",
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
-
-	if err := model.ValidateRequest(req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid request body " + err.Error(),
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
-
-	resp, err := h.Auth.VerifyEmail(req)
-	if err != nil {
-		c.JSON(err.Code, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
-}
-
-// VerifyPhoneHandler handles phone verification requests
-func (h *Handler) VerifyPhoneHandler(c *gin.Context) {
-	var req model.VerifyPhoneRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid request body",
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
-
-	if err := model.ValidateRequest(req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid request body " + err.Error(),
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
-
-	resp, err := h.Auth.VerifyPhone(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return

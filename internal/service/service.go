@@ -24,8 +24,6 @@ type AuthService interface {
 	UpdateProfile(uid string, req model.UpdateProfileRequest) (model.SuccessResponse, *model.ErrorResponse)
 	DeleteAccount(uid string) (model.SuccessResponse, *model.ErrorResponse)
 	ChangePassword(uid string, req model.ChangePasswordRequest) (model.SuccessResponse, *model.ErrorResponse)
-	VerifyEmail(req model.VerifyEmailRequest) (model.SuccessResponse, *model.ErrorResponse)
-	VerifyPhone(req model.VerifyPhoneRequest) (model.SuccessResponse, *model.ErrorResponse)
 	ResendVerification(req model.ResendVerificationRequest) (model.ResendVerificationResponse, *model.ErrorResponse)
 	Verify2FA(req model.Verify2FARequest) (model.SuccessResponse, *model.ErrorResponse)
 	Disable2FA(uid string) (model.SuccessResponse, *model.ErrorResponse)
@@ -102,21 +100,6 @@ func (s *authService) ResetPassword(req model.ResetPasswordRequest) (model.Succe
 
 // ChangeLogin updates the user's email or phone
 func (s *authService) ChangeLogin(req model.ChangeLoginRequest) (model.SuccessResponse, *model.ErrorResponse) {
-	if req.NewEmail != "" && req.OldCredential == req.NewEmail {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "New email must be different from old credential",
-			Code:    400,
-		}
-	}
-	if req.NewPhone != "" && req.OldCredential == req.NewPhone {
-		return model.SuccessResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "New phone must be different from old credential",
-			Code:    400,
-		}
-	}
-
 	resp, err := s.repo.ChangeLogin(req)
 	if err != nil {
 		return model.SuccessResponse{}, err
@@ -166,7 +149,6 @@ func (s *authService) Logout() (model.SuccessResponse, *model.ErrorResponse) {
 	}
 	return resp, nil
 }
-
 
 // VerifyToken verifies a token
 func (s *authService) VerifyToken(token string) (model.SuccessResponse, *model.ErrorResponse) {
@@ -219,24 +201,6 @@ func (s *authService) ChangePassword(uid string, req model.ChangePasswordRequest
 		}
 	}
 	resp, err := s.repo.ChangePassword(uid, req)
-	if err != nil {
-		return model.SuccessResponse{}, err
-	}
-	return resp, nil
-}
-
-// VerifyEmail verifies the user's email
-func (s *authService) VerifyEmail(req model.VerifyEmailRequest) (model.SuccessResponse, *model.ErrorResponse) {
-	resp, err := s.repo.VerifyEmail(req)
-	if err != nil {
-		return model.SuccessResponse{}, err
-	}
-	return resp, nil
-}
-
-// VerifyPhone verifies the user's phone number
-func (s *authService) VerifyPhone(req model.VerifyPhoneRequest) (model.SuccessResponse, *model.ErrorResponse) {
-	resp, err := s.repo.VerifyPhone(req)
 	if err != nil {
 		return model.SuccessResponse{}, err
 	}

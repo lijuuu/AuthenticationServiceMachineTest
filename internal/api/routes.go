@@ -27,7 +27,6 @@ func RegisterAuthRoutes(r *gin.Engine, handler *Handler, authClient *auth.Client
 		protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 		{
 			// Authentication & Session Management
-			protected.POST("/logout", handler.LogoutHandler)
 			protected.GET("/verify-token", handler.VerifyTokenHandler)
 
 			// User Account Management
@@ -38,8 +37,6 @@ func RegisterAuthRoutes(r *gin.Engine, handler *Handler, authClient *auth.Client
 			protected.POST("/change-login", handler.ChangeLoginHandler)
 
 			// Contact & Credential Management
-			protected.POST("/verify-email", handler.VerifyEmailHandler)
-			protected.POST("/verify-phone", handler.VerifyPhoneHandler)
 			protected.POST("/add-credential", handler.AddAltCredentialHandler)
 
 			// 2FA Management

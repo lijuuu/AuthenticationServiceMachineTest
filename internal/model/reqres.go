@@ -68,15 +68,14 @@ type ForgotPasswordRequest struct {
 type ResetPasswordRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	OTP      string `json:"otp" validate:"required,len=6"`
-	Password string `json:"password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789,containsany=!@#$%^&*()_+-=[]{}|;:,.<>?"`
+	Password string `json:"password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789"`
 }
 
 // ChangeLoginRequest - Structure for changing login credentials
 type ChangeLoginRequest struct {
-	OldCredential string `json:"old_credential" validate:"required"`
-	NewEmail      string `json:"new_email" validate:"required_without=NewPhone,email"`
-	NewPhone      string `json:"new_phone" validate:"required_without=NewEmail,e164"`
-	NewPassword   string `json:"new_password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789,containsany=!@#$%^&*()_+-=[]{}|;:,.<>?"`
+	UID      string `json:"uid"`
+	Password string `json:"password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789"`
+	NewEmail string `json:"new_email" validate:"email"`
 }
 
 // Enable2FARequest - Structure to enable 2FA request
@@ -93,7 +92,7 @@ type AddAltCredentialRequest struct {
 // ChangePasswordRequest - Structure for the change password request
 type ChangePasswordRequest struct {
 	OldPassword string `json:"old_password" validate:"required"`
-	NewPassword string `json:"new_password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789,containsany=!@#$%^&*()_+-=[]{}|;:,.<>?"`
+	NewPassword string `json:"new_password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789"`
 }
 
 // VerifyEmailRequest - Structure for email verification request
