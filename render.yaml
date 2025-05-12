@@ -8,3 +8,5 @@ services:
     envVars:
       - key: GO_VERSION
         value: 1.24.1
+      - key: GOTOOLCHAIN
+        value: auto
