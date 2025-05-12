@@ -58,10 +58,14 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal yaml: %w", err)
+	}
+
+	log.Println("Environment is ", cfg.Environment)
+	if cfg.Environment == "production" {
+		cfg.Firebase.CredentialsPath = "/etc/secrets/serviceAccountKey.json"
 	}
 
 	// load env overrides
@@ -69,10 +73,6 @@ func LoadConfig(path string) (*Config, error) {
 	cfg.Twilio.AccountSID = os.Getenv("TWILIO_ACCOUNT_SID")
 	cfg.Twilio.AuthToken = os.Getenv("TWILIO_AUTH_TOKEN")
 	cfg.Twilio.PhoneNumber = os.Getenv("TWILIO_PHONE_NUMBER")
-
-	if cfg.Environment == "production" {
-		cfg.Firebase.CredentialsPath = "/etc/secrets/serviceAccountKey.json"
-	}
 
 	// load firebase credentials from json file
 	firebaseCredsData, err := os.ReadFile(cfg.Firebase.CredentialsPath)
