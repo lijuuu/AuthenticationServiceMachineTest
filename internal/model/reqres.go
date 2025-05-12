@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -55,7 +56,7 @@ type GuestLoginRequest struct {
 // VerifyCredentialsRequest - Structure to verify credentials
 type VerifyCredentialsRequest struct {
 	Credential string `json:"credential" validate:"required"`
-	OTP   string `json:"otp" validate:"required"`
+	OTP        string `json:"otp" validate:"required"`
 }
 
 // ForgotPasswordRequest - Structure for forgot password request
@@ -80,12 +81,12 @@ type ChangeLoginRequest struct {
 
 // Enable2FARequest - Structure to enable 2FA request
 type Enable2FARequest struct {
-	Email string `json:"email" validate:"required,email"`
+	UID string `json:"uid"`
 }
 
 // AddAltCredentialRequest - Structure for adding alternative credentials
 type AddAltCredentialRequest struct {
-	UID        string `json:"uid" validate:"required"`
+	UID        string `json:"uid"`
 	Credential string `json:"credential" validate:"required"`
 }
 
@@ -115,8 +116,8 @@ type ResendVerificationRequest struct {
 
 // Verify2FARequest - Structure for verifying 2FA code
 type Verify2FARequest struct {
-	Email string `json:"email" validate:"required,email"`
-	Code  string `json:"code" validate:"required,len=6"`
+	UID           string `json:"uid"`
+	TwoFactorCode string `json:"two_factor_code" validate:"required,len=6"`
 }
 
 // RefreshTokenRequest - Structure for refreshing access token
@@ -161,25 +162,24 @@ type ProfileResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
 	Payload struct {
-		UID                  string   `json:"uid"`
-		Email                string   `json:"email"`
-		Phone                string   `json:"phone"`
-		IsPhoneVerified      bool     `json:"is_phone_verified"`
-		IsEmailVerified      bool     `json:"is_email_verified"`
-		IsGuestUser          bool     `json:"is_guest_user"`
-		Joint                []string `json:"joint"`
-		IsBillableUser       bool     `json:"is_billable_user"`
-		Is2FNeeded           bool     `json:"is_2f_needed"`
-		FirstName            string   `json:"first_name"`
-		SecondName           string   `json:"second_name"`
-		UserCreatedDate      string   `json:"user_created_date"`
-		UserLastLoginDetails string   `json:"user_last_login_details"`
-		CountryOfOrigin      string   `json:"country_of_origin"`
-		Address              string   `json:"address"`
-		Username             string   `json:"username"`
-		CreatedAt            string   `json:"created_at"`
-		Bio                  string   `json:"bio"`
-		ImageURL             string   `json:"image_url"`
+		UID                  string    `json:"uid"`
+		Email                string    `json:"email"`
+		Phone                string    `json:"phone"`
+		IsPhoneVerified      bool      `json:"is_phone_verified"`
+		IsEmailVerified      bool      `json:"is_email_verified"`
+		IsGuestUser          bool      `json:"is_guest_user"`
+		Joint                []any     `json:"joint"`
+		IsBillableUser       bool      `json:"is_billable_user"`
+		Is2FNeeded           bool      `json:"is_2f_needed"`
+		FirstName            string    `json:"first_name"`
+		SecondName           string    `json:"second_name"`
+		UserCreatedDate      time.Time `json:"user_created_date"`
+		UserLastLoginDetails time.Time `json:"user_last_login_details"`
+		CountryOfOrigin      string    `json:"country_of_origin"`
+		Address              string    `json:"address"`
+		Username             string    `json:"username"`
+		CreatedAt            time.Time `json:"created_at"`
+		Bio                  string    `json:"bio"`
 	} `json:"payload"`
 }
 

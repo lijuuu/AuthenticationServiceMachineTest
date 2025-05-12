@@ -20,7 +20,6 @@ type AuthService interface {
 	AddAltCredential(req model.AddAltCredentialRequest) (model.SuccessResponse, *model.ErrorResponse)
 	GetProfile(uid string) (model.ProfileResponse, *model.ErrorResponse)
 	Logout() (model.SuccessResponse, *model.ErrorResponse)
-	RefreshToken(req model.RefreshTokenRequest) (model.TokenResponse, *model.ErrorResponse)
 	VerifyToken(token string) (model.SuccessResponse, *model.ErrorResponse)
 	UpdateProfile(uid string, req model.UpdateProfileRequest) (model.SuccessResponse, *model.ErrorResponse)
 	DeleteAccount(uid string) (model.SuccessResponse, *model.ErrorResponse)
@@ -168,14 +167,6 @@ func (s *authService) Logout() (model.SuccessResponse, *model.ErrorResponse) {
 	return resp, nil
 }
 
-// RefreshToken refreshes the user's token
-func (s *authService) RefreshToken(req model.RefreshTokenRequest) (model.TokenResponse, *model.ErrorResponse) {
-	resp, err := s.repo.RefreshToken(req)
-	if err != nil {
-		return model.TokenResponse{}, err
-	}
-	return resp, nil
-}
 
 // VerifyToken verifies a token
 func (s *authService) VerifyToken(token string) (model.SuccessResponse, *model.ErrorResponse) {

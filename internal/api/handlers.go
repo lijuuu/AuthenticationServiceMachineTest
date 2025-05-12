@@ -83,7 +83,18 @@ func (h *Handler) LoginHandler(c *gin.Context) {
 
 // GuestLoginHandler handles guest login requests
 func (h *Handler) GuestLoginHandler(c *gin.Context) {
-	resp, err := h.Auth.GuestLogin(model.GuestLoginRequest{})
+
+	var req model.GuestLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Invalid request body",
+			Code:    http.StatusBadRequest,
+		})
+		return
+	}
+
+	resp, err := h.Auth.GuestLogin(req)
 	if err != nil {
 		c.JSON(err.Code, err)
 		return
@@ -214,15 +225,8 @@ func (h *Handler) ChangeLoginHandler(c *gin.Context) {
 // Enable2FAHandler handles 2FA enablement requests
 func (h *Handler) Enable2FAHandler(c *gin.Context) {
 	var req model.Enable2FARequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid request body",
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
 
+	req.UID = c.MustGet("uid").(string)
 	if err := model.ValidateRequest(req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
@@ -252,6 +256,9 @@ func (h *Handler) AddAltCredentialHandler(c *gin.Context) {
 		})
 		return
 	}
+
+	req.UID = c.MustGet("uid").(string)
+
 	if err := model.ValidateRequest(req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
@@ -294,40 +301,10 @@ func (h *Handler) LogoutHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// RefreshTokenHandler handles token refresh requests
-func (h *Handler) RefreshTokenHandler(c *gin.Context) {
-	var req model.RefreshTokenRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid request body",
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
-
-	if err := model.ValidateRequest(req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid request body " + err.Error(),
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
-
-	resp, err := h.Auth.RefreshToken(req)
-	if err != nil {
-		c.JSON(err.Code, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
-}
-
 // VerifyTokenHandler handles token verification requests
 func (h *Handler) VerifyTokenHandler(c *gin.Context) {
 
-	uid, _ := c.Get("uid")
+	uid := c.MustGet("uid")
 
 	c.JSON(http.StatusOK, model.SuccessResponse{
 		Status:  "success",
@@ -516,6 +493,8 @@ func (h *Handler) Verify2FAHandler(c *gin.Context) {
 		})
 		return
 	}
+
+	req.UID = c.MustGet("uid").(string)
 
 	if err := model.ValidateRequest(req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{

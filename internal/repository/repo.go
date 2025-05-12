@@ -18,6 +18,7 @@ import (
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/model"
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/utils"
 
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 )
 
@@ -265,13 +266,20 @@ func (r *FirebaseRepository) Login(req model.LoginRequest) (model.TokenResponse,
 				Code:    401,
 			}
 		}
-		if !totp.Validate(req.TwoFactorCode, totpSecret) {
+		valid, err := totp.ValidateCustom(req.TwoFactorCode, totpSecret, time.Now(), totp.ValidateOpts{
+			Period:    30,
+			Skew:      0, //dont
+			Digits:    otp.DigitsSix,
+			Algorithm: otp.AlgorithmSHA1,
+		})
+		if err != nil || !valid {
 			return model.TokenResponse{}, &model.ErrorResponse{
 				Status:  "error",
 				Message: "Invalid TOTP code",
 				Code:    401,
 			}
 		}
+
 	}
 
 	// Update last login details
@@ -298,6 +306,31 @@ func (r *FirebaseRepository) Login(req model.LoginRequest) (model.TokenResponse,
 
 // GuestLogin creates a guest user
 func (r *FirebaseRepository) GuestLogin(req model.GuestLoginRequest) (model.TokenResponse, *model.ErrorResponse) {
+	if req.Username != "" {
+		// assuming "users" collection with field "username"
+		query := r.firestoreClient.Collection("users").Where("username", "==", req.Username).Limit(1)
+		docs, err := query.Documents(r.ctx).GetAll()
+		if err != nil {
+			return model.TokenResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Internal server error",
+				Code:    500,
+			}
+		}
+		if len(docs) > 0 {
+			return model.TokenResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Username already in use",
+				Code:    400,
+			}
+		}
+	} else {
+		return model.TokenResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Username not provided",
+			Code:    400,
+		}
+	}
 	params := (&auth.UserToCreate{}).
 		DisplayName(req.Username)
 
@@ -310,15 +343,7 @@ func (r *FirebaseRepository) GuestLogin(req model.GuestLoginRequest) (model.Toke
 		}
 	}
 
-	token, err := r.authClient.CustomToken(r.ctx, user.UID)
-	if err != nil {
-		_ = r.authClient.DeleteUser(r.ctx, user.UID)
-		return model.TokenResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Failed to generate guest token: " + err.Error(),
-			Code:    500,
-		}
-	}
+	token := middleware.GenerateJWT(context.Background(), user.UID, r.cfg.JWTSecret)
 
 	// Store guest profile in Firestore
 	currentTime := time.Now().UTC()
@@ -712,7 +737,7 @@ func (r *FirebaseRepository) ChangeLogin(req model.ChangeLoginRequest) (model.Su
 
 // Enable2FA enables two-factor authentication with TOTP
 func (r *FirebaseRepository) Enable2FA(req model.Enable2FARequest) (model.SuccessResponse, *model.ErrorResponse) {
-	user, err := r.authClient.GetUserByEmail(r.ctx, req.Email)
+	user, err := r.authClient.GetUser(r.ctx, req.UID)
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
@@ -730,7 +755,15 @@ func (r *FirebaseRepository) Enable2FA(req model.Enable2FARequest) (model.Succes
 			Code:    500,
 		}
 	}
-	if doc.Data()["is_2fa_needed"].(bool) {
+	data := doc.Data()
+	is2FA := false
+	if val, ok := data["is_2fa_needed"]; ok {
+		if b, ok := val.(bool); ok {
+			is2FA = b
+		}
+	}
+
+	if is2FA {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
 			Message: "2FA is already enabled",
@@ -741,8 +774,10 @@ func (r *FirebaseRepository) Enable2FA(req model.Enable2FARequest) (model.Succes
 	// Generate TOTP secret
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      "AuthenticationServiceMachineTest",
-		AccountName: req.Email,
+		AccountName: req.UID,
+		Period:      30,
 	})
+
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
@@ -891,19 +926,18 @@ func (r *FirebaseRepository) GetProfile(uid string) (model.ProfileResponse, *mod
 	resp.Payload.IsPhoneVerified = data["is_phone_verified"].(bool)
 	resp.Payload.IsEmailVerified = data["is_email_verified"].(bool)
 	resp.Payload.IsGuestUser = data["is_guest_user"].(bool)
-	resp.Payload.Joint = data["joint"].([]string)
+	resp.Payload.Joint = data["joint"].([]any)
 	resp.Payload.IsBillableUser = data["is_billable_user"].(bool)
 	resp.Payload.Is2FNeeded = data["is_2f_needed"].(bool)
 	resp.Payload.FirstName = data["first_name"].(string)
 	resp.Payload.SecondName = data["second_name"].(string)
-	resp.Payload.UserCreatedDate = data["user_created_date"].(string)
-	resp.Payload.UserLastLoginDetails = data["user_last_login_details"].(string)
+	resp.Payload.UserCreatedDate = data["user_created_date"].(time.Time)
+	resp.Payload.UserLastLoginDetails = data["user_last_login_details"].(time.Time)
 	resp.Payload.CountryOfOrigin = data["country_of_origin"].(string)
 	resp.Payload.Address = data["address"].(string)
 	resp.Payload.Username = data["username"].(string)
-	resp.Payload.CreatedAt = data["created_at"].(string)
+	resp.Payload.CreatedAt = data["created_at"].(time.Time)
 	resp.Payload.Bio = data["bio"].(string)
-	resp.Payload.ImageURL = data["image_url"].(string)
 
 	return resp, nil
 }
@@ -913,46 +947,6 @@ func (r *FirebaseRepository) Logout() (model.SuccessResponse, *model.ErrorRespon
 	return model.SuccessResponse{
 		Status:  "success",
 		Message: "Logged out successfully",
-	}, nil
-}
-
-// RefreshToken generates a new custom token
-func (r *FirebaseRepository) RefreshToken(req model.RefreshTokenRequest) (model.TokenResponse, *model.ErrorResponse) {
-	decoded, err := r.authClient.VerifyIDToken(r.ctx, req.RefreshToken)
-	if err != nil {
-		return model.TokenResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Invalid refresh token",
-			Code:    401,
-		}
-	}
-
-	token, err := r.authClient.CustomToken(r.ctx, decoded.UID)
-	if err != nil {
-		return model.TokenResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Failed to generate new token: " + err.Error(),
-			Code:    500,
-		}
-	}
-
-	// Update last login details
-	_, err = r.firestoreClient.Collection("users").Doc(decoded.UID).Update(r.ctx, []firestore.Update{
-		{Path: "user_last_login_details", Value: time.Now().UTC()},
-		{Path: "updated_at", Value: time.Now().UTC()},
-	})
-	if err != nil {
-		return model.TokenResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Failed to update login details: " + err.Error(),
-			Code:    500,
-		}
-	}
-
-	return model.TokenResponse{
-		Status:  "success",
-		Message: "Token refreshed successfully",
-		Token:   token,
 	}, nil
 }
 
@@ -1445,7 +1439,7 @@ func (r *FirebaseRepository) ResendVerification(req model.ResendVerificationRequ
 
 // Verify2FA verifies the TOTP code
 func (r *FirebaseRepository) Verify2FA(req model.Verify2FARequest) (model.SuccessResponse, *model.ErrorResponse) {
-	user, err := r.authClient.GetUserByEmail(r.ctx, req.Email)
+	user, err := r.authClient.GetUser(r.ctx, req.UID)
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
@@ -1482,7 +1476,7 @@ func (r *FirebaseRepository) Verify2FA(req model.Verify2FARequest) (model.Succes
 	}
 
 	// Validate TOTP code
-	valid := totp.Validate(req.Code, totpSecret)
+	valid := totp.Validate(req.TwoFactorCode, totpSecret)
 	if !valid {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",

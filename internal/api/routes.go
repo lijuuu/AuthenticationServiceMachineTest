@@ -28,7 +28,6 @@ func RegisterAuthRoutes(r *gin.Engine, handler *Handler, authClient *auth.Client
 		{
 			// Authentication & Session Management
 			protected.POST("/logout", handler.LogoutHandler)
-			protected.POST("/token/refresh", handler.RefreshTokenHandler)
 			protected.GET("/verify-token", handler.VerifyTokenHandler)
 
 			// User Account Management
