@@ -2,18 +2,19 @@ package middleware
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
-	"firebase.google.com/go/auth"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt"
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/model"
 )
 
 // AuthMiddleware creates a Gin middleware to verify Firebase ID tokens
-func AuthMiddleware(authClient *auth.Client, ctx context.Context) gin.HandlerFunc {
+func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get the Authorization header
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, model.ErrorResponse{
@@ -25,7 +26,6 @@ func AuthMiddleware(authClient *auth.Client, ctx context.Context) gin.HandlerFun
 			return
 		}
 
-		// Expect header format: "Bearer <ID_TOKEN>"
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
 			c.JSON(http.StatusUnauthorized, model.ErrorResponse{
@@ -37,24 +37,63 @@ func AuthMiddleware(authClient *auth.Client, ctx context.Context) gin.HandlerFun
 			return
 		}
 
-		idToken := parts[1]
+		tokenStr := parts[1]
+		secret := []byte(jwtSecret)
 
-		// Verify the ID token using Firebase Admin SDK
-		token, err := authClient.VerifyIDToken(ctx, idToken)
-		if err != nil {
+		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+			// validate signing method
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return secret, nil
+		})
+
+		if err != nil || !token.Valid {
 			c.JSON(http.StatusUnauthorized, model.ErrorResponse{
 				Status:  "error",
-				Message: "Invalid or expired token: " + err.Error(),
+				Message: "Invalid or expired JWT: " + err.Error(),
 				Code:    http.StatusUnauthorized,
 			})
 			c.Abort()
 			return
 		}
 
-		// Store the UID in the Gin context for downstream handlers
-		c.Set("uid", token.UID)
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok || claims["sub"] == nil {
+			c.JSON(http.StatusUnauthorized, model.ErrorResponse{
+				Status:  "error",
+				Message: "Invalid JWT claims",
+				Code:    http.StatusUnauthorized,
+			})
+			c.Abort()
+			return
+		}
 
-		// Continue to the next handler
+		uid := claims["sub"].(string)
+		c.Set("uid", uid)
 		c.Next()
 	}
+}
+
+func GenerateJWT(ctx context.Context, uid, jwtsecret string) string {
+	secret := []byte(jwtsecret)
+
+	//define claims
+	claims := jwt.MapClaims{
+		"sub": uid,                                   // subject = user id
+		"exp": time.Now().Add(24 * time.Hour).Unix(), // expires in 24h
+		"iat": time.Now().Unix(),                     // issued at
+	}
+
+	//create token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	//sign the token
+	signedToken, err := token.SignedString(secret)
+	if err != nil {
+		log.Printf("failed to sign JWT: %v", err)
+		return ""
+	}
+
+	return signedToken
 }

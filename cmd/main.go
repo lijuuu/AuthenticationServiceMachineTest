@@ -41,7 +41,7 @@ func main() {
 
 	// start gin and attach routes
 	engine := gin.Default()
-	api.RegisterAuthRoutes(engine, authHandler, fbClients.AuthClient, ctx)
+	api.RegisterAuthRoutes(engine, authHandler, fbClients.AuthClient, ctx, *configs)
 
 	engine.Run(configs.Server.Port)
 }

@@ -5,11 +5,12 @@ import (
 
 	"firebase.google.com/go/auth"
 	"github.com/gin-gonic/gin"
+	"github.com/lijuuu/AuthenticationServiceMachineTest/config"
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/middleware"
 )
 
 // RegisterAuthRoutes sets up authentication-related routes with middleware
-func RegisterAuthRoutes(r *gin.Engine, handler *Handler, authClient *auth.Client, ctx context.Context) {
+func RegisterAuthRoutes(r *gin.Engine, handler *Handler, authClient *auth.Client, ctx context.Context, cfg config.Config) {
 	auth := r.Group("/api/v1/auth")
 	{
 		// Public routes (no authentication required)
@@ -23,7 +24,7 @@ func RegisterAuthRoutes(r *gin.Engine, handler *Handler, authClient *auth.Client
 
 		// Protected routes (require valid Firebase ID token)
 		protected := auth.Group("/")
-		protected.Use(middleware.AuthMiddleware(authClient, ctx))
+		protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 		{
 			// Authentication & Session Management
 			protected.POST("/logout", handler.LogoutHandler)

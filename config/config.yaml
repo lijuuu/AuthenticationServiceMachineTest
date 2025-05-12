@@ -2,3 +2,5 @@ server:
   port: ":8080"
 firebase:
   credentials_path: "./secrets/serviceAccountKey.json"
+resend:
+  from:  "zenxbattle <noreply@zenxbattle.space>"

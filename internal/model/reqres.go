@@ -31,9 +31,10 @@ type ErrorResponse struct {
 
 // SignupRequest - Structure for the user signup request
 type SignupRequest struct {
-	Email      string `json:"email" validate:"required_without=Phone,email"`
-	Phone      string `json:"phone" validate:"required_without=Email,e164"`
-	Password   string `json:"password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789,containsany=!@#$%^&*()_+-=[]{}|;:,.<>?"`
+	Email string `json:"email,omitempty" validate:"omitempty,email|required_without=Phone"`
+	Phone string `json:"phone,omitempty" validate:"omitempty,e164|required_without=Email"`
+
+	Password   string `json:"password" validate:"required,min=8,containsany=abcdefghijklmnopqrstuvwxyz,containsany=0123456789"`
 	Username   string `json:"username" validate:"required,min=3"`
 	FirstName  string `json:"first_name" validate:"omitempty"`
 	SecondName string `json:"second_name" validate:"omitempty"`
@@ -41,8 +42,9 @@ type SignupRequest struct {
 
 // LoginRequest - Structure for the user login request
 type LoginRequest struct {
-	Credential string `json:"credential" validate:"required"`
-	Password   string `json:"password" validate:"required"`
+	Credential    string `json:"credential" validate:"required"`
+	Password      string `json:"password" validate:"required"`
+	TwoFactorCode string `json:"two_factor_code" validate:"omitempty"`
 }
 
 // GuestLoginRequest - Structure for the guest login/signup request
@@ -53,7 +55,7 @@ type GuestLoginRequest struct {
 // VerifyCredentialsRequest - Structure to verify credentials
 type VerifyCredentialsRequest struct {
 	Credential string `json:"credential" validate:"required"`
-	Password   string `json:"password" validate:"required"`
+	OTP   string `json:"otp" validate:"required"`
 }
 
 // ForgotPasswordRequest - Structure for forgot password request
@@ -107,8 +109,8 @@ type VerifyPhoneRequest struct {
 
 // ResendVerificationRequest - Structure for resending email/phone verification
 type ResendVerificationRequest struct {
-	Email string `json:"email" validate:"required_without=Phone,email"`
-	Phone string `json:"phone" validate:"required_without=Email,e164"`
+	Email string `json:"email,omitempty" validate:"omitempty,email|required_without=Phone"`
+	Phone string `json:"phone,omitempty" validate:"omitempty,e164|required_without=Email"`
 }
 
 // Verify2FARequest - Structure for verifying 2FA code

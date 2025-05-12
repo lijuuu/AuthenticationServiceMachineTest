@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/rand"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/lijuuu/AuthenticationServiceMachineTest/config"
 	firebaseclient "github.com/lijuuu/AuthenticationServiceMachineTest/internal/firebase"
+	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/middleware"
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/model"
 	"github.com/lijuuu/AuthenticationServiceMachineTest/internal/utils"
 
@@ -77,6 +79,26 @@ func (r *FirebaseRepository) Signup(req model.SignupRequest) (model.SuccessRespo
 		}
 	}
 
+	if req.Username != "" {
+		// assuming "users" collection with field "username"
+		query := r.firestoreClient.Collection("users").Where("username", "==", req.Username).Limit(1)
+		docs, err := query.Documents(r.ctx).GetAll()
+		if err != nil {
+			return model.SuccessResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Internal server error",
+				Code:    500,
+			}
+		}
+		if len(docs) > 0 {
+			return model.SuccessResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Username already in use",
+				Code:    400,
+			}
+		}
+	}
+
 	// Hash password with bcrypt
 	hashedPassword := req.Password
 	if req.Password != "" {
@@ -91,11 +113,16 @@ func (r *FirebaseRepository) Signup(req model.SignupRequest) (model.SuccessRespo
 		hashedPassword = string(hash)
 	}
 
-	params := (&auth.UserToCreate{}).
-		Email(req.Email).
-		PhoneNumber(req.Phone).
-		Password(hashedPassword).
-		DisplayName(req.Username)
+	params := &auth.UserToCreate{}
+	params = params.Password(hashedPassword).DisplayName(req.Username)
+
+	if req.Phone != "" {
+		params = params.PhoneNumber(req.Phone)
+	}
+
+	if req.Email != "" {
+		params = params.Email(req.Email)
+	}
 
 	user, err := r.authClient.CreateUser(r.ctx, params)
 	if err != nil {
@@ -107,11 +134,11 @@ func (r *FirebaseRepository) Signup(req model.SignupRequest) (model.SuccessRespo
 	}
 
 	// Store user profile in Firestore with all required fields
-	currentTime := time.Now().Format(time.RFC3339)
+	currentTime := time.Now().UTC()
 	joint := []string{"Capcons"}
 	isBillable := req.Password != "" && contains(joint, "Capcons")
 
-	profile := map[string]interface{}{
+	profile := map[string]any{
 		"uid":                        user.UID,
 		"email":                      req.Email,
 		"phone":                      req.Phone,
@@ -131,7 +158,6 @@ func (r *FirebaseRepository) Signup(req model.SignupRequest) (model.SuccessRespo
 		"username":                   req.Username,
 		"created_at":                 currentTime,
 		"updated_at":                 currentTime,
-		"2fa_enabled":                false,
 		"totp_secret":                "",
 		"bio":                        "",
 		"image_url":                  "",
@@ -177,7 +203,7 @@ func (r *FirebaseRepository) Signup(req model.SignupRequest) (model.SuccessRespo
 	}, nil
 }
 
-// Login verifies user credentials and generates a custom token
+// Login verifies user credentials and TOTP code (if 2FA is enabled) and generates a custom token
 func (r *FirebaseRepository) Login(req model.LoginRequest) (model.TokenResponse, *model.ErrorResponse) {
 	var user *auth.UserRecord
 	var err error
@@ -222,10 +248,36 @@ func (r *FirebaseRepository) Login(req model.LoginRequest) (model.TokenResponse,
 		}
 	}
 
+	// Check 2FA if enabled
+	if twoFAEnabled, ok := data["is_2fa_needed"].(bool); ok && twoFAEnabled {
+		totpSecret, ok := data["totp_secret"].(string)
+		if !ok || totpSecret == "" {
+			return model.TokenResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "2FA is enabled but TOTP secret is missing",
+				Code:    500,
+			}
+		}
+		if req.TwoFactorCode == "" {
+			return model.TokenResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "TOTP code is required for 2FA",
+				Code:    401,
+			}
+		}
+		if !totp.Validate(req.TwoFactorCode, totpSecret) {
+			return model.TokenResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Invalid TOTP code",
+				Code:    401,
+			}
+		}
+	}
+
 	// Update last login details
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
-		{Path: "user_last_login_details", Value: time.Now().Format(time.RFC3339)},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "user_last_login_details", Value: time.Now().UTC()},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.TokenResponse{}, &model.ErrorResponse{
@@ -235,14 +287,7 @@ func (r *FirebaseRepository) Login(req model.LoginRequest) (model.TokenResponse,
 		}
 	}
 
-	token, err := r.authClient.CustomToken(r.ctx, user.UID)
-	if err != nil {
-		return model.TokenResponse{}, &model.ErrorResponse{
-			Status:  "error",
-			Message: "Failed to generate token: " + err.Error(),
-			Code:    500,
-		}
-	}
+	token := middleware.GenerateJWT(context.Background(), user.UID, r.cfg.JWTSecret)
 
 	return model.TokenResponse{
 		Status:  "success",
@@ -276,7 +321,7 @@ func (r *FirebaseRepository) GuestLogin(req model.GuestLoginRequest) (model.Toke
 	}
 
 	// Store guest profile in Firestore
-	currentTime := time.Now().Format(time.RFC3339)
+	currentTime := time.Now().UTC()
 	profile := map[string]interface{}{
 		"uid":                        user.UID,
 		"email":                      "",
@@ -297,7 +342,7 @@ func (r *FirebaseRepository) GuestLogin(req model.GuestLoginRequest) (model.Toke
 		"username":                   req.Username,
 		"created_at":                 currentTime,
 		"updated_at":                 currentTime,
-		"2fa_enabled":                false,
+		"is_2fa_needed":              false,
 		"totp_secret":                "",
 		"bio":                        "",
 		"image_url":                  "",
@@ -323,55 +368,133 @@ func (r *FirebaseRepository) GuestLogin(req model.GuestLoginRequest) (model.Toke
 	}, nil
 }
 
-// VerifyCredentials checks if the provided credentials are valid
+// VerifyCredentials checks if the provided credential and OTP are valid
 func (r *FirebaseRepository) VerifyCredentials(req model.VerifyCredentialsRequest) (model.SuccessResponse, *model.ErrorResponse) {
 	var user *auth.UserRecord
 	var err error
+	var otpType, identifierField, identifier string
 
-	// Check if credential is an email or phone
+	// Determine if credential is an email or phone
 	if strings.Contains(req.Credential, "@") {
 		user, err = r.authClient.GetUserByEmail(r.ctx, req.Credential)
+		otpType = "email_verification"
+		identifierField = "email"
+		identifier = req.Credential
 	} else {
 		user, err = r.authClient.GetUserByPhoneNumber(r.ctx, req.Credential)
+		otpType = "phone_verification"
+		identifierField = "phone"
+		identifier = req.Credential
 	}
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
-			Message: "Invalid credentials",
-			Code:    401,
+			Message: "Invalid credential: User not found",
+			Code:    404,
 		}
 	}
 
-	// Verify password
-	doc, err := r.firestoreClient.Collection("users").Doc(user.UID).Get(r.ctx)
+	// Check for a valid OTP in the otps collection
+	query := r.firestoreClient.Collection("otps").
+		Where(identifierField, "==", identifier).
+		Where("type", "==", otpType).
+		Where("otp", "==", req.OTP).
+		Limit(1)
+	docs, err := query.Documents(r.ctx).GetAll()
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
-			Message: "Failed to retrieve profile: " + err.Error(),
+			Message: "Failed to verify OTP: " + err.Error(),
 			Code:    500,
 		}
 	}
-	data := doc.Data()
-	storedPassword, ok := data["password"].(string)
-	if !ok || storedPassword == "" {
+	if len(docs) == 0 {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
-			Message: "No password set for this user",
-			Code:    401,
+			Message: "Invalid OTP",
+			Code:    400,
 		}
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(req.Password)); err != nil {
+
+	// Verify OTP expiration
+	otpData := docs[0].Data()
+	expiresAt, ok := otpData["expires_at"].(time.Time)
+	if !ok || expiresAt.Before(time.Now().UTC()) {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
-			Message: "Invalid password",
-			Code:    401,
+			Message: "OTP has expired",
+			Code:    400,
 		}
+	}
+
+	// OTP is valid; optionally update verification status
+	updates := []firestore.Update{
+		{Path: "updated_at", Value: time.Now().UTC()},
+	}
+	if otpType == "email_verification" {
+		if user.EmailVerified {
+			return model.SuccessResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Email is already verified",
+				Code:    400,
+			}
+		}
+		// Update Firebase Authentication
+		_, err = r.authClient.UpdateUser(r.ctx, user.UID, (&auth.UserToUpdate{}).EmailVerified(true))
+		if err != nil {
+			return model.SuccessResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Failed to update email verification status: " + err.Error(),
+				Code:    500,
+			}
+		}
+		updates = append(updates, []firestore.Update{
+			{Path: "is_email_verified", Value: true},
+			{Path: "email_verification_pending", Value: false},
+		}...)
+	} else if otpType == "phone_verification" {
+		doc, err := r.firestoreClient.Collection("users").Doc(user.UID).Get(r.ctx)
+		if err != nil {
+			return model.SuccessResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Failed to retrieve profile: " + err.Error(),
+				Code:    500,
+			}
+		}
+		if isVerified, ok := doc.Data()["is_phone_verified"].(bool); ok && isVerified {
+			return model.SuccessResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Phone is already verified",
+				Code:    400,
+			}
+		}
+		updates = append(updates, []firestore.Update{
+			{Path: "is_phone_verified", Value: true},
+			{Path: "phone_verification_pending", Value: false},
+		}...)
+	}
+
+	// Update Firestore profile
+	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, updates)
+	if err != nil {
+		return model.SuccessResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to update profile: " + err.Error(),
+			Code:    500,
+		}
+	}
+
+	// Delete the used OTP
+	_, err = r.firestoreClient.Collection("otps").Doc(docs[0].Ref.ID).Delete(r.ctx)
+	if err != nil {
+		// Log the error but don't fail the request
+		log.Printf("Failed to delete OTP document %s: %v", docs[0].Ref.ID, err)
 	}
 
 	return model.SuccessResponse{
 		Status:  "success",
-		Message: "Credentials verified",
-		Payload: map[string]any{
+		Message: "Credentials verified successfully",
+		Payload: map[string]interface{}{
 			"uid": user.UID,
 		},
 	}, nil
@@ -443,7 +566,7 @@ func (r *FirebaseRepository) ResetPassword(req model.ResetPasswordRequest) (mode
 	_, err = r.firestoreClient.Collection("users").Doc(uid).Update(r.ctx, []firestore.Update{
 		{Path: "password", Value: hashedPassword},
 		{Path: "password_reset_pending", Value: false},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
@@ -548,7 +671,7 @@ func (r *FirebaseRepository) ChangeLogin(req model.ChangeLoginRequest) (model.Su
 	updates := []firestore.Update{
 		{Path: "password", Value: hashedPassword},
 		{Path: "is_billable_user", Value: contains(doc.Data()["joint"].([]string), "Capcons")},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	}
 	if req.NewEmail != "" {
 		updates = append(updates, firestore.Update{Path: "email", Value: req.NewEmail})
@@ -607,7 +730,7 @@ func (r *FirebaseRepository) Enable2FA(req model.Enable2FARequest) (model.Succes
 			Code:    500,
 		}
 	}
-	if doc.Data()["2fa_enabled"].(bool) {
+	if doc.Data()["is_2fa_needed"].(bool) {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
 			Message: "2FA is already enabled",
@@ -630,10 +753,9 @@ func (r *FirebaseRepository) Enable2FA(req model.Enable2FARequest) (model.Succes
 
 	// Store TOTP secret and enable 2FA in Firestore
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
-		{Path: "2fa_enabled", Value: true},
-		{Path: "is_2f_needed", Value: true}, // Set if admin status is determined elsewhere
+		{Path: "is_2fa_needed", Value: true},
 		{Path: "totp_secret", Value: key.Secret()},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
@@ -687,7 +809,7 @@ func (r *FirebaseRepository) AddAltCredential(req model.AddAltCredentialRequest)
 
 	update := &auth.UserToUpdate{}
 	updates := []firestore.Update{
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	}
 
 	if strings.Contains(req.Credential, "@") {
@@ -816,8 +938,8 @@ func (r *FirebaseRepository) RefreshToken(req model.RefreshTokenRequest) (model.
 
 	// Update last login details
 	_, err = r.firestoreClient.Collection("users").Doc(decoded.UID).Update(r.ctx, []firestore.Update{
-		{Path: "user_last_login_details", Value: time.Now().Format(time.RFC3339)},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "user_last_login_details", Value: time.Now().UTC()},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.TokenResponse{}, &model.ErrorResponse{
@@ -873,7 +995,7 @@ func (r *FirebaseRepository) UpdateProfile(uid string, req model.UpdateProfileRe
 	}
 
 	updates := []firestore.Update{
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	}
 	if *req.Username != "" {
 		updates = append(updates, firestore.Update{Path: "username", Value: req.Username})
@@ -1019,7 +1141,7 @@ func (r *FirebaseRepository) ChangePassword(uid string, req model.ChangePassword
 	// Update Firestore profile
 	_, err = r.firestoreClient.Collection("users").Doc(uid).Update(r.ctx, []firestore.Update{
 		{Path: "password", Value: hashedPassword},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
@@ -1085,7 +1207,7 @@ func (r *FirebaseRepository) VerifyEmail(req model.VerifyEmailRequest) (model.Su
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
 		{Path: "is_email_verified", Value: true},
 		{Path: "email_verification_pending", Value: false},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
@@ -1147,7 +1269,7 @@ func (r *FirebaseRepository) VerifyPhone(req model.VerifyPhoneRequest) (model.Su
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
 		{Path: "is_phone_verified", Value: true},
 		{Path: "phone_verification_pending", Value: false},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
@@ -1209,7 +1331,7 @@ func (r *FirebaseRepository) ResendVerification(req model.ResendVerificationRequ
 			Code:    400,
 		}
 	}
-	if field == "phone"  {
+	if field == "phone" {
 		doc, err := r.firestoreClient.Collection("users").Doc(user.UID).Get(r.ctx)
 		if err != nil {
 			return model.ResendVerificationResponse{}, &model.ErrorResponse{
@@ -1218,7 +1340,7 @@ func (r *FirebaseRepository) ResendVerification(req model.ResendVerificationRequ
 				Code:    404,
 			}
 		}
-		if doc.Data()["is_phone_verified"].(bool) {
+		if isVerified, ok := doc.Data()["is_phone_verified"].(bool); ok && isVerified {
 			return model.ResendVerificationResponse{}, &model.ErrorResponse{
 				Status:  "error",
 				Message: "Phone is already verified",
@@ -1227,7 +1349,41 @@ func (r *FirebaseRepository) ResendVerification(req model.ResendVerificationRequ
 		}
 	}
 
-	// Generate OTP and set expiry
+	// Check for existing non-expired OTP
+	query := r.firestoreClient.Collection("otps").
+		Where("uid", "==", user.UID).
+		Where("type", "==", verificationType).
+		Where("expires_at", ">", time.Now().UTC())
+	docs, err := query.Documents(r.ctx).GetAll()
+	if err != nil {
+		return model.ResendVerificationResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to check existing OTPs: " + err.Error(),
+			Code:    500,
+		}
+	}
+
+	if len(docs) > 0 {
+		// Found a non-expired OTP; do not send a new one
+		otpData := docs[0].Data()
+		expiresAt, ok := otpData["expires_at"].(time.Time)
+		if !ok {
+			return model.ResendVerificationResponse{}, &model.ErrorResponse{
+				Status:  "error",
+				Message: "Invalid OTP expiration data",
+				Code:    500,
+			}
+		}
+		// Calculate time remaining until expiry
+		timeUntilExpiry := expiresAt.Sub(time.Now().UTC()).Round(time.Second)
+		return model.ResendVerificationResponse{}, &model.ErrorResponse{
+			Status:  "error",
+			Message: fmt.Sprintf("An OTP is already active. Please wait %s before requesting a new one.", timeUntilExpiry),
+			Code:    429, // Too Many Requests
+		}
+	}
+
+	// Generate new OTP and set expiry
 	otp := generateOTP()
 	createdAt := time.Now()
 	expiresAt := createdAt.Add(15 * time.Minute)
@@ -1239,10 +1395,10 @@ func (r *FirebaseRepository) ResendVerification(req model.ResendVerificationRequ
 		"uid":        user.UID,
 		"email":      req.Email,
 		"phone":      req.Phone,
-		"created_at": createdAt.Format(time.RFC3339),
+		"created_at": createdAt.UTC(),
 		"expires_at": expiresAt,
 	}
-	_, err = r.firestoreClient.Collection("otps").Doc(fmt.Sprintf("%s-%s-%s", user.UID, verificationType, createdAt.Format(time.RFC3339))).Set(r.ctx, otpDoc)
+	_, err = r.firestoreClient.Collection("otps").Doc(fmt.Sprintf("%s-%s-%s", user.UID, verificationType, createdAt.UTC())).Set(r.ctx, otpDoc)
 	if err != nil {
 		return model.ResendVerificationResponse{}, &model.ErrorResponse{
 			Status:  "error",
@@ -1258,7 +1414,7 @@ func (r *FirebaseRepository) ResendVerification(req model.ResendVerificationRequ
 	}
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
 		{Path: updateField, Value: true},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.ResendVerificationResponse{}, &model.ErrorResponse{
@@ -1308,7 +1464,7 @@ func (r *FirebaseRepository) Verify2FA(req model.Verify2FARequest) (model.Succes
 	}
 
 	data := doc.Data()
-	if !data["2fa_enabled"].(bool) {
+	if !data["is_2fa_needed"].(bool) {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
 			Message: "2FA not enabled",
@@ -1352,10 +1508,9 @@ func (r *FirebaseRepository) Disable2FA(uid string) (model.SuccessResponse, *mod
 	}
 
 	_, err := r.firestoreClient.Collection("users").Doc(uid).Update(r.ctx, []firestore.Update{
-		{Path: "2fa_enabled", Value: false},
-		{Path: "is_2f_needed", Value: false},
+		{Path: "is_2fa_needed", Value: false},
 		{Path: "totp_secret", Value: ""},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
@@ -1397,7 +1552,7 @@ func (r *FirebaseRepository) Get2FAStatus(uid string) (model.TwoFAStatusResponse
 		Payload: struct {
 			Enabled bool `json:"enabled"`
 		}{
-			Enabled: data["2fa_enabled"].(bool),
+			Enabled: data["is_2fa_needed"].(bool),
 		},
 	}
 
@@ -1427,10 +1582,10 @@ func (r *FirebaseRepository) SendPasswordResetEmail(req model.ForgotPasswordRequ
 		"uid":        user.UID,
 		"email":      req.Email,
 		"phone":      "",
-		"created_at": createdAt.Format(time.RFC3339),
+		"created_at": createdAt.UTC(),
 		"expires_at": expiresAt,
 	}
-	_, err = r.firestoreClient.Collection("otps").Doc(fmt.Sprintf("%s-%s-%s", user.UID, "password_reset", createdAt.Format(time.RFC3339))).Set(r.ctx, otpDoc)
+	_, err = r.firestoreClient.Collection("otps").Doc(fmt.Sprintf("%s-%s-%s", user.UID, "password_reset", createdAt.UTC())).Set(r.ctx, otpDoc)
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
@@ -1442,7 +1597,7 @@ func (r *FirebaseRepository) SendPasswordResetEmail(req model.ForgotPasswordRequ
 	// Update Firestore to mark password reset as pending
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
 		{Path: "password_reset_pending", Value: true},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
@@ -1511,10 +1666,10 @@ func (r *FirebaseRepository) SendPhoneVerification(phone string) (model.SuccessR
 		"uid":        user.UID,
 		"email":      "",
 		"phone":      phone,
-		"created_at": createdAt.Format(time.RFC3339),
+		"created_at": createdAt.UTC(),
 		"expires_at": expiresAt,
 	}
-	_, err = r.firestoreClient.Collection("otps").Doc(fmt.Sprintf("%s-%s-%s", user.UID, "phone_verification", createdAt.Format(time.RFC3339))).Set(r.ctx, otpDoc)
+	_, err = r.firestoreClient.Collection("otps").Doc(fmt.Sprintf("%s-%s-%s", user.UID, "phone_verification", createdAt.UTC())).Set(r.ctx, otpDoc)
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
@@ -1526,7 +1681,7 @@ func (r *FirebaseRepository) SendPhoneVerification(phone string) (model.SuccessR
 	// Update Firestore to mark phone verification as pending
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
 		{Path: "phone_verification_pending", Value: true},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
@@ -1587,10 +1742,10 @@ func (r *FirebaseRepository) SendEmailVerification(email string) (model.SuccessR
 		"uid":        user.UID,
 		"email":      email,
 		"phone":      "",
-		"created_at": createdAt.Format(time.RFC3339),
+		"created_at": createdAt.UTC(),
 		"expires_at": expiresAt,
 	}
-	_, err = r.firestoreClient.Collection("otps").Doc(fmt.Sprintf("%s-%s-%s", user.UID, "email_verification", createdAt.Format(time.RFC3339))).Set(r.ctx, otpDoc)
+	_, err = r.firestoreClient.Collection("otps").Doc(fmt.Sprintf("%s-%s-%s", user.UID, "email_verification", createdAt.UTC())).Set(r.ctx, otpDoc)
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{
 			Status:  "error",
@@ -1602,7 +1757,7 @@ func (r *FirebaseRepository) SendEmailVerification(email string) (model.SuccessR
 	// Update Firestore to mark email verification as pending
 	_, err = r.firestoreClient.Collection("users").Doc(user.UID).Update(r.ctx, []firestore.Update{
 		{Path: "email_verification_pending", Value: true},
-		{Path: "updated_at", Value: time.Now().Format(time.RFC3339)},
+		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {
 		return model.SuccessResponse{}, &model.ErrorResponse{

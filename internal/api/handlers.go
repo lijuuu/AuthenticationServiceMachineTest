@@ -326,23 +326,16 @@ func (h *Handler) RefreshTokenHandler(c *gin.Context) {
 
 // VerifyTokenHandler handles token verification requests
 func (h *Handler) VerifyTokenHandler(c *gin.Context) {
-	token := c.Query("token")
-	if token == "" {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Status:  "error",
-			Message: "Token is required",
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
 
-	resp, err := h.Auth.VerifyToken(token)
-	if err != nil {
-		c.JSON(err.Code, err)
-		return
-	}
+	uid, _ := c.Get("uid")
 
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, model.SuccessResponse{
+		Status:  "success",
+		Message: "Token verified successfully",
+		Payload: map[string]any{
+			"uid": uid,
+		},
+	})
 }
 
 // UpdateProfileHandler handles profile update requests

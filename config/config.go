@@ -40,6 +40,8 @@ type Config struct {
 		AuthToken   string `yaml:"-"`
 		PhoneNumber string `yaml:"-"`
 	} `yaml:"twilio"`
+
+	JWTSecret string
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -83,6 +85,10 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Firebase.Credentials.PrivateKey == "" || cfg.Firebase.Credentials.ClientEmail == "" {
 		return nil, fmt.Errorf("invalid firebase credentials json")
+	}
+
+	if cfg.JWTSecret == " " {
+		cfg.JWTSecret = "supersecretjwt"
 	}
 
 	return &cfg, nil
